@@ -13,11 +13,13 @@ Completed: 2026-02-01
 - Adapters: discord_adapter.py, web_adapter.py
 - Core: bus.py, messages.py, router.py
 - Templates: dashboard.html (dark theme UI)
+- Demo: Redis-backed demo loop view + logs at demo/dashboard/logs.txt
 
 ## What It Does
 Discord is the human interface layer with two adapters:
 - **Discord Bot**: Slash commands, message listening, emoji reactions
 - **Web Dashboard**: FastAPI + WebSocket for real-time UI
+  - **Demo Loop view**: Reads Redis keys + demo logs for loop status
 
 Message flow:
 ```

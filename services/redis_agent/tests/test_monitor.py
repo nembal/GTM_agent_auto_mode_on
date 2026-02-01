@@ -11,6 +11,7 @@ Uses fakeredis for isolated testing without a real Redis server.
 import asyncio
 import json
 import time
+from types import SimpleNamespace
 from typing import Any, AsyncGenerator
 
 import pytest
@@ -25,6 +26,34 @@ from services.redis_agent.monitor import (
     process_metric,
     update_aggregations,
 )
+
+
+@pytest.fixture
+def mock_settings() -> SimpleNamespace:
+    return SimpleNamespace(
+        google_api_key="",
+        redis_agent_model="test-model",
+        summary_interval_seconds=1,
+        orchestrator_channel="fullsend:to_orchestrator",
+        metrics_channel="fullsend:metrics",
+        threshold_check_interval_seconds=1,
+        alert_cooldown_seconds=60,
+    )
+
+
+@pytest.fixture(autouse=True)
+def patch_settings(monkeypatch, mock_settings):
+    import services.redis_agent.alerts as alerts
+    import services.redis_agent.monitor as monitor
+
+    monitor._settings = None
+    alerts._settings = None
+
+    monkeypatch.setattr(monitor, "get_settings", lambda: mock_settings)
+    monkeypatch.setattr(alerts, "get_settings", lambda: mock_settings)
+    yield
+    monitor._settings = None
+    alerts._settings = None
 
 
 @pytest_asyncio.fixture

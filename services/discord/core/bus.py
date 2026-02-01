@@ -97,6 +97,35 @@ class RedisBus:
         self._callbacks.clear()
         logger.info("Disconnected from Redis")
 
+    async def get_value(self, key: str) -> str | None:
+        """Get a string value from Redis."""
+        if self._redis is None:
+            return None
+        return await self._redis.get(key)
+
+    async def hgetall(self, key: str) -> dict[str, str]:
+        """Get all fields from a Redis hash."""
+        if self._redis is None:
+            return {}
+        return await self._redis.hgetall(key)
+
+    async def lrange(self, key: str, start: int, end: int) -> list[str]:
+        """Get a range of items from a Redis list."""
+        if self._redis is None:
+            return []
+        return await self._redis.lrange(key, start, end)
+
+    async def scan_keys(self, pattern: str, count: int = 200) -> list[str]:
+        """Scan for keys matching a pattern (best-effort)."""
+        if self._redis is None:
+            return []
+        keys: list[str] = []
+        async for key in self._redis.scan_iter(match=pattern, count=count):
+            keys.append(key)
+            if len(keys) >= count:
+                break
+        return keys
+
     async def publish(self, channel: str, message: str | BaseModel | dict[str, Any]) -> int:
         """Publish a message to a channel.
 

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Literal
 
@@ -11,6 +12,7 @@ import anthropic
 from .config import PROMPTS_DIR, Settings
 from .context import Context
 from .dispatcher import Decision
+from services.tracing import init_tracing, trace_call_async
 
 logger = logging.getLogger(__name__)
 
@@ -308,6 +310,7 @@ class OrchestratorAgent:
         self.settings = settings
         self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.system_prompt = load_prompt("system.txt")
+        init_tracing(os.getenv("WEAVE_PROJECT", "fullsend/orchestrator"))
 
     async def process_with_thinking(
         self, msg: dict[str, Any], context: Context
@@ -377,15 +380,27 @@ class OrchestratorAgent:
         Returns:
             Parsed Decision object
         """
-        response = await self.client.messages.create(
-            model=self.settings.orchestrator_model,
-            max_tokens=self.settings.orchestrator_max_tokens,
-            thinking={
-                "type": "enabled",
-                "budget_tokens": self.settings.orchestrator_thinking_budget,
+        async def _create_response():
+            return await self.client.messages.create(
+                model=self.settings.orchestrator_model,
+                max_tokens=self.settings.orchestrator_max_tokens,
+                thinking={
+                    "type": "enabled",
+                    "budget_tokens": self.settings.orchestrator_thinking_budget,
+                },
+                system=self.system_prompt,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+        response = await trace_call_async(
+            "llm.orchestrator",
+            _create_response,
+            trace_meta={
+                "model": self.settings.orchestrator_model,
+                "max_tokens": self.settings.orchestrator_max_tokens,
+                "thinking_budget": self.settings.orchestrator_thinking_budget,
+                "prompt_chars": len(prompt),
             },
-            system=self.system_prompt,
-            messages=[{"role": "user", "content": prompt}],
         )
         return parse_decision(response)
 

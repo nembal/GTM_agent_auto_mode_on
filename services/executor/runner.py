@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -11,6 +12,8 @@ import redis.asyncio as redis
 from .config import Settings
 from .loader import ToolError, ToolNotFoundError, ToolRetryExhaustedError, ToolTimeoutError, load_tool
 from .metrics import run_with_metrics
+from services.demo_logger import log_event
+from services.tracing import init_tracing, trace_call
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +82,7 @@ async def execute_experiment(
     run_id = f"{exp_id}:{int(time.time())}"
 
     logger.info(f"Starting experiment run: {run_id}")
+    init_tracing(os.getenv("WEAVE_PROJECT", "fullsend/executor"))
 
     # Update experiment state
     await redis_client.hset(f"experiments:{exp_id}", "state", "running")
@@ -101,6 +105,14 @@ async def execute_experiment(
         params = execution.get("params", {})
 
         logger.info(f"Loading tool: {tool_name}")
+        log_event(
+            "executor.run_started",
+            {
+                "experiment_id": exp_id,
+                "run_id": run_id,
+                "tool": tool_name,
+            },
+        )
 
         # Load the required tool
         tool_fn = load_tool(tool_name, settings.tools_path)
@@ -108,11 +120,24 @@ async def execute_experiment(
         # Execute with metrics collection
         start_time = time.time()
 
+        def _run_tool():
+            return trace_call(
+                f"tool.execute:{tool_name}",
+                tool_fn,
+                trace_meta={
+                    "experiment_id": exp_id,
+                    "run_id": run_id,
+                    "tool": tool_name,
+                    "param_keys": sorted(params.keys()),
+                },
+                **params,
+            )
+
         result = await run_with_metrics(
             redis_client,
             exp_id,
             run_id,
-            lambda: tool_fn(**params),
+            _run_tool,
             settings,
         )
 
@@ -144,6 +169,14 @@ async def execute_experiment(
                 "duration": duration,
             },
             settings.channel_experiment_results,
+        )
+        log_event(
+            "executor.run_completed",
+            {
+                "experiment_id": exp_id,
+                "run_id": run_id,
+                "duration_seconds": round(duration, 2),
+            },
         )
 
         logger.info(f"Experiment completed: {run_id} in {duration:.2f}s")
@@ -241,6 +274,15 @@ async def _handle_failure(
         redis_client,
         notification,
         settings.channel_experiment_results,
+    )
+    log_event(
+        "executor.run_failed",
+        {
+            "experiment_id": exp_id,
+            "run_id": run_id,
+            "error_type": type(error).__name__,
+            "error": str(error)[:160],
+        },
     )
 
     logger.error(f"Experiment failed: {run_id} - {error}")

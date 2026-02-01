@@ -14,6 +14,7 @@ from typing import Any
 from redis.asyncio import Redis
 
 from .config import get_settings
+from services.demo_logger import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,13 @@ async def send_alert(redis: Redis, alert: dict[str, Any]) -> bool:
     # Publish to Orchestrator
     message = json.dumps(alert)
     await redis.publish(_get_settings().orchestrator_channel, message)
+    log_event(
+        "redis_agent.alert_sent",
+        {
+            "experiment_id": exp_id,
+            "alert_type": alert_type,
+        },
+    )
 
     logger.info(f"Alert sent: {alert_type} for {exp_id}")
     logger.debug(f"Alert payload: {message}")

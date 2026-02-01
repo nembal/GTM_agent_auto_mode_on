@@ -12,6 +12,7 @@ Watcher can READ (not write) these keys:
 import asyncio
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ import redis.asyncio as redis
 
 from .classifier import Classification
 from .retry import ModelCallError, retry_model_call
+from services.tracing import init_tracing, trace_call_async
 
 logger = logging.getLogger(__name__)
 
@@ -91,10 +93,16 @@ async def _call_gemini_response(
 
     Separated out to allow retry wrapping.
     """
-    response = await asyncio.to_thread(
+    response = await trace_call_async(
+        "llm.watcher.respond",
+        asyncio.to_thread,
         model.generate_content,
         prompt,
         generation_config=generation_config,
+        trace_meta={
+            "model": getattr(model, "model_name", None) or getattr(model, "model", None),
+            "prompt_chars": len(prompt),
+        },
     )
     return response.text
 
@@ -150,6 +158,7 @@ async def generate_response(
     Raises:
         ModelCallError: If all retry attempts fail
     """
+    init_tracing(os.getenv("WEAVE_PROJECT", "fullsend/watcher"))
     # If classifier already provided a suggested response, use it directly
     if classification.suggested_response:
         return classification.suggested_response

@@ -1,14 +1,13 @@
 """Roundtable loop: ARTIST, BUSINESS, TECH take turns; same LLM, different prompts."""
 
 import os
-
 import weave
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from services.demo_logger import log_event
 from .llm import get_llm
 from .personas import ROLES, get_persona, get_summarizer_prompt
-
-weave.init(os.getenv("WEAVE_PROJECT", "fullsend/roundtable"))
+from services.tracing import init_tracing, trace_call
 
 
 @weave.op
@@ -33,6 +32,15 @@ def run_roundtable(
             - transcript: Formatted string with round headers
             - summary: List of actionable tasks with owners
     """
+    init_tracing(os.getenv("WEAVE_PROJECT", "fullsend/roundtable"))
+    log_event(
+        "roundtable.start",
+        {
+            "prompt_chars": len(prompt),
+            "max_rounds": max_rounds,
+            "has_context": bool(context),
+        },
+    )
     llm = get_llm()
     learnings = learnings or []
 
@@ -78,7 +86,17 @@ Keep it concise (2-3 sentences). Be distinctive to your persona."""
                 HumanMessage(content=agent_prompt),
             ]
 
-            response = llm.invoke(messages)
+            response = trace_call(
+                "llm.roundtable",
+                llm.invoke,
+                messages,
+                trace_meta={
+                    "role": role,
+                    "round": round_num + 1,
+                    "max_rounds": max_rounds,
+                    "prompt_chars": len(agent_prompt),
+                },
+            )
             content = response.content if hasattr(response, "content") else str(response)
             transcript_parts.append(f"{role.upper()}: {content.strip()}\n")
 
@@ -99,7 +117,15 @@ Format as a simple list:
 - Task description (Owner: who)"""),
     ]
 
-    summary_response = llm.invoke(summary_messages)
+    summary_response = trace_call(
+        "llm.roundtable.summary",
+        llm.invoke,
+        summary_messages,
+        trace_meta={
+            "max_rounds": max_rounds,
+            "transcript_chars": len(transcript),
+        },
+    )
     summary_text = (
         summary_response.content
         if hasattr(summary_response, "content")
@@ -116,4 +142,11 @@ Format as a simple list:
     # Ensure max 5 tasks
     summary = tasks[:5] if tasks else [summary_text]
 
+    log_event(
+        "roundtable.complete",
+        {
+            "summary_items": len(summary),
+            "transcript_chars": len(transcript),
+        },
+    )
     return {"transcript": transcript, "summary": summary}

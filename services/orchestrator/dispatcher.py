@@ -12,6 +12,7 @@ import redis.asyncio as redis
 
 from .config import Settings
 from .context import append_learning, update_worklist
+from services.demo_logger import log_event
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,13 @@ class Dispatcher:
             self.settings.channel_to_fullsend,
             json.dumps(payload),
         )
+        log_event(
+            "orchestrator.dispatch_fullsend",
+            {
+                "priority": decision.priority,
+                "idea_preview": str(decision.payload)[:120],
+            },
+        )
         logger.info(
             f"Dispatched experiment request to FULLSEND: "
             f"priority={decision.priority}, idea={decision.payload}"
@@ -94,6 +102,13 @@ class Dispatcher:
         await self.redis.publish(
             self.settings.channel_builder_tasks,
             json.dumps(payload),
+        )
+        log_event(
+            "orchestrator.dispatch_builder",
+            {
+                "priority": decision.priority,
+                "prd_preview": str(decision.payload)[:120],
+            },
         )
         logger.info(
             f"Dispatched tool PRD to Builder: "
@@ -155,6 +170,13 @@ class Dispatcher:
                 "archived_by": "orchestrator",
             },
         )
+        log_event(
+            "orchestrator.experiment_archived",
+            {
+                "experiment_id": decision.experiment_id,
+                "reason": str(reason)[:160],
+            },
+        )
 
         logger.info(
             f"Killed experiment: {decision.experiment_id}, reason: {reason}"
@@ -187,6 +209,13 @@ class Dispatcher:
         })
 
         logger.info(f"Initiating Roundtable: prompt='{prompt[:100]}...'")
+        log_event(
+            "orchestrator.roundtable.requested",
+            {
+                "prompt_chars": len(prompt),
+                "context_chars": len(context),
+            },
+        )
 
         try:
             # Run Roundtable as subprocess (per PRD_ROUNDTABLE.md)
@@ -197,6 +226,13 @@ class Dispatcher:
                     roundtable_input,
                 ),
                 timeout=self.settings.roundtable_timeout_seconds,
+            )
+            log_event(
+                "orchestrator.roundtable.completed",
+                {
+                    "summary_chars": len(result.get("summary", "")),
+                    "has_error": bool(result.get("error")),
+                },
             )
             logger.info(
                 f"Roundtable completed: "
@@ -209,6 +245,10 @@ class Dispatcher:
             logger.error(
                 f"Roundtable timed out after {self.settings.roundtable_timeout_seconds}s"
             )
+            log_event(
+                "orchestrator.roundtable.timeout",
+                {"timeout_seconds": self.settings.roundtable_timeout_seconds},
+            )
             return {
                 "error": "Roundtable timed out",
                 "transcript": [],
@@ -216,6 +256,10 @@ class Dispatcher:
             }
         except Exception as e:
             logger.error(f"Roundtable failed: {e}", exc_info=True)
+            log_event(
+                "orchestrator.roundtable.failed",
+                {"error_type": type(e).__name__, "error": str(e)[:160]},
+            )
             return {
                 "error": str(e),
                 "transcript": [],

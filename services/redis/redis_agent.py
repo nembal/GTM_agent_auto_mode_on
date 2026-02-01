@@ -15,12 +15,13 @@ from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_mcp_adapters.client import MultiServerMCPClient
+from services.tracing import init_tracing
 
 # Redis at localhost:6379 — redis-mcp-server is spawned via stdio and exposes MCP tools
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
 # Weave/W&B monitoring (same project as orchestrator)
-weave.init("viswanathkothe-syracuse-university/weavehacks")
+init_tracing(os.getenv("WEAVE_PROJECT", "viswanathkothe-syracuse-university/weavehacks"))
 
 
 def get_llm():

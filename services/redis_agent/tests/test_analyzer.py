@@ -3,9 +3,10 @@
 Tests the LLM-powered analysis and periodic summaries.
 """
 
+import builtins
 import json
+from types import SimpleNamespace
 from typing import Any, AsyncGenerator
-from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
@@ -17,6 +18,38 @@ from services.redis_agent.analyzer import (
     generate_summary,
 )
 from services.redis_agent.monitor import update_aggregations
+
+
+@pytest.fixture
+def mock_settings() -> SimpleNamespace:
+    return SimpleNamespace(
+        google_api_key="",
+        redis_agent_model="test-model",
+        summary_interval_seconds=1,
+        orchestrator_channel="fullsend:to_orchestrator",
+        metrics_channel="fullsend:metrics",
+        threshold_check_interval_seconds=1,
+        alert_cooldown_seconds=60,
+    )
+
+
+@pytest.fixture(autouse=True)
+def patch_settings(monkeypatch, mock_settings):
+    import services.redis_agent.alerts as alerts
+    import services.redis_agent.analyzer as analyzer
+    import services.redis_agent.monitor as monitor
+
+    analyzer._settings = None
+    monitor._settings = None
+    alerts._settings = None
+
+    monkeypatch.setattr(analyzer, "get_settings", lambda: mock_settings)
+    monkeypatch.setattr(monitor, "get_settings", lambda: mock_settings)
+    monkeypatch.setattr(alerts, "get_settings", lambda: mock_settings)
+    yield
+    analyzer._settings = None
+    monitor._settings = None
+    alerts._settings = None
 
 
 @pytest_asyncio.fixture
@@ -68,32 +101,29 @@ class TestGenerateSummary:
     async def test_generate_summary_no_api_key(self, redis):
         """Returns mock summary when GOOGLE_API_KEY not set."""
         experiments = [{"id": "exp_1"}, {"id": "exp_2"}]
-
-        with patch("services.redis_agent.analyzer.settings") as mock_settings:
-            mock_settings.google_api_key = ""
-            result = await generate_summary(redis, experiments)
+        result = await generate_summary(redis, experiments)
 
         assert "2 experiments" in result
         assert "Gemini not configured" in result
 
     @pytest.mark.asyncio
-    async def test_generate_summary_missing_package(self, redis):
+    async def test_generate_summary_missing_package(self, redis, mock_settings, monkeypatch):
         """Handles missing google-generativeai package gracefully."""
         experiments = [{"id": "exp_1"}]
+        mock_settings.google_api_key = "test-key"
 
-        with patch("services.redis_agent.analyzer.settings") as mock_settings:
-            mock_settings.google_api_key = "test-key"
+        original_import = builtins.__import__
 
-            # Simulate import error
-            with patch.dict("sys.modules", {"google.generativeai": None}):
-                with patch(
-                    "services.redis_agent.analyzer.generate_summary"
-                ) as mock_gen:
-                    mock_gen.return_value = "Summary of 1 experiments (missing google-generativeai)"
-                    # For this test, we just verify the pattern works
-                    result = await mock_gen(redis, experiments)
+        def fake_import(name, *args, **kwargs):
+            if name == "google.generativeai":
+                raise ImportError("No module named google.generativeai")
+            return original_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", fake_import)
+        result = await generate_summary(redis, experiments)
 
         assert "1 experiments" in result
+        assert "missing google-generativeai" in result
 
 
 class TestAnalyzeExperimentMetrics:
@@ -118,10 +148,7 @@ class TestAnalyzeExperimentMetrics:
                 "success_criteria": json.dumps(["rate > 0.1"]),
             },
         )
-
-        with patch("services.redis_agent.analyzer.settings") as mock_settings:
-            mock_settings.google_api_key = ""
-            result = await analyze_experiment_metrics(redis, exp_id)
+        result = await analyze_experiment_metrics(redis, exp_id)
 
         assert exp_id in result
         assert "Gemini not configured" in result
@@ -143,10 +170,7 @@ class TestAnalyzeExperimentMetrics:
 
         # Add some metrics
         await update_aggregations(redis, exp_id, {"response_rate": 0.15})
-
-        with patch("services.redis_agent.analyzer.settings") as mock_settings:
-            mock_settings.google_api_key = ""
-            result = await analyze_experiment_metrics(redis, exp_id)
+        result = await analyze_experiment_metrics(redis, exp_id)
 
         # Should reference the experiment (even in mock mode)
         assert exp_id in result

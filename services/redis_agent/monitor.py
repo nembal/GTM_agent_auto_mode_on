@@ -134,23 +134,24 @@ async def get_current_metrics(redis: Redis, exp_id: str) -> dict[str, Any]:
     sums: dict[str, float] = {}
     counts: dict[str, int] = {}
 
+    decoded: dict[str, str] = {}
     for key, value in raw_agg.items():
         if isinstance(key, bytes):
             key = key.decode("utf-8")
         if isinstance(value, bytes):
             value = value.decode("utf-8")
+        decoded[key] = value
 
-        if key.endswith("_count"):
-            base = key.rsplit("_count", 1)[0]
-            if base.endswith("_"):
-                # This is a count for averaging (e.g., response_rate_count)
-                counts[base.rstrip("_")] = int(value)
-            else:
-                # This is an event count (e.g., email_sent_count)
-                metrics[key] = int(value)
-        elif key.endswith("_sum"):
+    for key, value in decoded.items():
+        if key.endswith("_sum"):
             base = key.rsplit("_sum", 1)[0]
             sums[base] = float(value)
+        elif key.endswith("_count"):
+            base = key.rsplit("_count", 1)[0]
+            if f"{base}_sum" in decoded:
+                counts[base] = int(value)
+            else:
+                metrics[key] = int(value)
         elif key.endswith("_latest"):
             base = key.rsplit("_latest", 1)[0]
             metrics[f"{base}_latest"] = float(value)

@@ -809,6 +809,7 @@ dev = [
 dev = [
     { name = "aiofiles" },
     { name = "anthropic" },
+    { name = "fakeredis" },
     { name = "google-generativeai" },
     { name = "pydantic-settings" },
     { name = "redis" },
@@ -836,6 +837,7 @@ provides-extras = ["dev"]
 dev = [
     { name = "aiofiles", specifier = ">=25.1.0" },
     { name = "anthropic", specifier = ">=0.77.0" },
+    { name = "fakeredis", specifier = ">=2.33.0" },
     { name = "google-generativeai", specifier = ">=0.8.6" },
     { name = "pydantic-settings", specifier = ">=2.12.0" },
     { name = "redis", specifier = ">=7.1.0" },

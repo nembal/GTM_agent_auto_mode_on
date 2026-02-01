@@ -25,6 +25,8 @@ from ..core.router import MessageRouter
 
 # Template directory
 TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+DEMO_LOG_PATH = REPO_ROOT / "demo" / "dashboard" / "logs.txt"
 
 logger = logging.getLogger(__name__)
 
@@ -163,6 +165,95 @@ class WebAdapter:
 
         return app
 
+    def _has_redis(self) -> bool:
+        return self.redis_bus is not None and self.redis_bus.is_connected
+
+    async def _get_demo_summary(self) -> dict[str, Any]:
+        if not self._has_redis():
+            return {
+                "redis_connected": False,
+                "experiments": {"total": 0, "by_state": {}},
+                "tools": {"total": 0, "active": 0, "inactive": 0},
+                "schedules": {"total": 0},
+                "metrics": {"experiments_with_metrics": 0},
+                "recent_runs": [],
+            }
+
+        assert self.redis_bus is not None
+
+        experiments = {"total": 0, "by_state": {}}
+        tools = {"total": 0, "active": 0, "inactive": 0}
+        schedules = {"total": 0}
+        metrics = {"experiments_with_metrics": 0}
+        recent_runs: list[dict[str, Any]] = []
+
+        exp_keys = await self.redis_bus.scan_keys("experiments:*", count=200)
+        experiments["total"] = len(exp_keys)
+        for key in exp_keys:
+            data = await self.redis_bus.hgetall(key)
+            state = data.get("state", "unknown")
+            experiments["by_state"][state] = experiments["by_state"].get(state, 0) + 1
+
+        tool_keys = await self.redis_bus.scan_keys("tools:*", count=200)
+        tools["total"] = len(tool_keys)
+        for key in tool_keys:
+            data = await self.redis_bus.hgetall(key)
+            state = data.get("state", "active")
+            if state == "active":
+                tools["active"] += 1
+            else:
+                tools["inactive"] += 1
+
+        schedule_keys = await self.redis_bus.scan_keys("schedules:*", count=200)
+        schedules["total"] = len(schedule_keys)
+
+        metric_keys = await self.redis_bus.scan_keys("metrics_aggregated:*", count=200)
+        metrics["experiments_with_metrics"] = len(metric_keys)
+
+        run_keys = await self.redis_bus.scan_keys("experiment_runs:*", count=50)
+        for key in run_keys:
+            data = await self.redis_bus.hgetall(key)
+            run_id = key.split("experiment_runs:", 1)[-1]
+            recent_runs.append(
+                {
+                    "run_id": run_id,
+                    "status": data.get("status", "unknown"),
+                    "duration_seconds": data.get("duration_seconds"),
+                    "timestamp": data.get("timestamp"),
+                }
+            )
+        recent_runs.sort(key=lambda r: r.get("timestamp") or "", reverse=True)
+        recent_runs = recent_runs[:10]
+
+        return {
+            "redis_connected": True,
+            "experiments": experiments,
+            "tools": tools,
+            "schedules": schedules,
+            "metrics": metrics,
+            "recent_runs": recent_runs,
+        }
+
+    def _read_demo_logs(self, limit: int = 200) -> list[dict[str, Any]]:
+        if not DEMO_LOG_PATH.exists():
+            return []
+        try:
+            lines = DEMO_LOG_PATH.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            return []
+        if limit > 0:
+            lines = lines[-limit:]
+        events: list[dict[str, Any]] = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return events
+
     def _register_routes(self, app: FastAPI) -> None:
         """Register all API routes."""
 
@@ -231,6 +322,16 @@ class WebAdapter:
             """Get recent activity feed."""
             items = list(self._feed)
             return FeedResponse(items=items, count=len(items))
+
+        @app.get("/api/demo/summary")
+        async def get_demo_summary() -> dict[str, Any]:
+            """Get Redis-backed demo summary."""
+            return await self._get_demo_summary()
+
+        @app.get("/api/demo/logs")
+        async def get_demo_logs(limit: int = 200) -> dict[str, Any]:
+            """Get recent demo log events from file."""
+            return {"events": self._read_demo_logs(limit=limit)}
 
         @app.post("/api/command")
         async def post_command(request: CommandRequest) -> dict[str, Any]:

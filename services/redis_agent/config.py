@@ -31,7 +31,7 @@ class Settings(BaseSettings):
         description="Google API key for Gemini",
     )
     redis_agent_model: str = Field(
-        default="gemini-2.0-flash-exp",
+        default="gemini-3-flash-preview",
         description="Gemini model to use",
     )
 

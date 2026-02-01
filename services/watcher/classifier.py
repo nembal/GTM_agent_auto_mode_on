@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Literal, Optional
 
@@ -10,6 +11,7 @@ import google.generativeai as genai
 from pydantic import BaseModel
 
 from .retry import ModelCallError, retry_model_call
+from services.tracing import init_tracing, trace_call_async
 
 logger = logging.getLogger(__name__)
 
@@ -98,10 +100,16 @@ async def _call_gemini_classify(
 
     Separated out to allow retry wrapping.
     """
-    response = await asyncio.to_thread(
+    response = await trace_call_async(
+        "llm.watcher.classify",
+        asyncio.to_thread,
         model.generate_content,
         prompt,
         generation_config=generation_config,
+        trace_meta={
+            "model": getattr(model, "model_name", None) or getattr(model, "model", None),
+            "prompt_chars": len(prompt),
+        },
     )
     return response.text
 
@@ -121,6 +129,7 @@ async def classify(msg: dict[str, Any], settings: Any) -> Classification:
     Raises:
         ModelCallError: If all retry attempts fail
     """
+    init_tracing(os.getenv("WEAVE_PROJECT", "fullsend/watcher"))
     # Configure Gemini API
     genai.configure(api_key=settings.google_api_key)
 

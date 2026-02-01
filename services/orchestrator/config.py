@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # Anthropic API Configuration
     anthropic_api_key: str = Field(..., description="Anthropic API key for Claude")
     orchestrator_model: str = Field(
-        default="claude-opus-4-20250514",
+        default="claude-opus-4-5-20251101",
         description="Claude model to use for strategic decisions",
     )
     orchestrator_thinking_budget: int = Field(

@@ -304,6 +304,74 @@
             color: #ef4444;
         }
 
+        /* Demo Section */
+        .demo-section {
+            padding: 0 1.5rem 2rem 1.5rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .demo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .demo-card {
+            background: #16213e;
+            border-radius: 12px;
+            border: 1px solid #0f3460;
+            padding: 1.25rem;
+        }
+
+        .demo-card h3 {
+            margin-bottom: 0.75rem;
+            font-size: 0.95rem;
+            color: #9ca3af;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .demo-card-full {
+            margin-top: 1rem;
+        }
+
+        .demo-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .demo-list-item {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 0.65rem 0.75rem;
+            border: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .demo-muted {
+            color: #9ca3af;
+        }
+
+        .btn-refresh {
+            background: #1a1a2e;
+            color: #eaeaea;
+            border: 1px solid #0f3460;
+            padding: 0.4rem 0.75rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+
+        .btn-refresh:hover {
+            box-shadow: 0 4px 10px rgba(15, 52, 96, 0.4);
+        }
+
         /* Responsive */
         @media (max-width: 768px) {
             main {
@@ -384,6 +452,33 @@
         </aside>
     </main>
 
+    <section class="demo-section">
+        <div class="section-header">
+            <span>Demo Loop</span>
+            <button class="btn-refresh" onclick="refreshDemo()">Refresh</button>
+        </div>
+        <div class="demo-grid">
+            <div class="demo-card">
+                <h3>Redis Summary</h3>
+                <div id="demoSummary" class="demo-list">
+                    <div class="demo-muted">Loading…</div>
+                </div>
+            </div>
+            <div class="demo-card">
+                <h3>Recent Runs</h3>
+                <div id="demoRuns" class="demo-list">
+                    <div class="demo-muted">Loading…</div>
+                </div>
+            </div>
+        </div>
+        <div class="demo-card demo-card-full">
+            <h3>Event Log</h3>
+            <div id="demoLogs" class="demo-list">
+                <div class="demo-muted">Loading…</div>
+            </div>
+        </div>
+    </section>
+
     <script>
         // Configuration
         const WS_RECONNECT_DELAY = 3000;
@@ -407,6 +502,9 @@
         const redisStatus = document.getElementById('redisStatus');
         const modeStatus = document.getElementById('modeStatus');
         const ideaInput = document.getElementById('ideaInput');
+        const demoSummary = document.getElementById('demoSummary');
+        const demoRuns = document.getElementById('demoRuns');
+        const demoLogs = document.getElementById('demoLogs');
 
         // Format timestamp
         function formatTimestamp(isoString) {
@@ -586,17 +684,108 @@
             uptimeDisplay.textContent = formatUptime(uptimeSeconds);
         }
 
+        function renderDemoSummary(data) {
+            if (!data || !data.redis_connected) {
+                demoSummary.innerHTML = '<div class="demo-muted">Redis not connected.</div>';
+                return;
+            }
+
+            const exp = data.experiments || { total: 0, by_state: {} };
+            const tools = data.tools || { total: 0, active: 0, inactive: 0 };
+            const schedules = data.schedules || { total: 0 };
+            const metrics = data.metrics || { experiments_with_metrics: 0 };
+
+            const states = Object.entries(exp.by_state || {})
+                .map(([state, count]) => `${escapeHtml(state)}: ${count}`)
+                .join(', ') || 'none';
+
+            demoSummary.innerHTML = [
+                `<div class="demo-list-item"><strong>Experiments:</strong> ${exp.total}</div>`,
+                `<div class="demo-list-item"><strong>States:</strong> ${states}</div>`,
+                `<div class="demo-list-item"><strong>Tools:</strong> ${tools.total} (active ${tools.active})</div>`,
+                `<div class="demo-list-item"><strong>Schedules:</strong> ${schedules.total}</div>`,
+                `<div class="demo-list-item"><strong>Metrics:</strong> ${metrics.experiments_with_metrics} exp(s)</div>`
+            ].join('');
+        }
+
+        function renderDemoRuns(data) {
+            const runs = (data && data.recent_runs) || [];
+            if (runs.length === 0) {
+                demoRuns.innerHTML = '<div class="demo-muted">No runs yet.</div>';
+                return;
+            }
+            demoRuns.innerHTML = runs.map((run) => {
+                const ts = run.timestamp ? formatTimestamp(run.timestamp) : '—';
+                const duration = run.duration_seconds ? `${run.duration_seconds}s` : '—';
+                return `
+                    <div class="demo-list-item">
+                        <div><strong>${escapeHtml(run.run_id || 'run')}</strong></div>
+                        <div class="demo-muted">${escapeHtml(run.status || 'unknown')} · ${ts} · ${duration}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderDemoLogs(events) {
+            if (!events || events.length === 0) {
+                demoLogs.innerHTML = '<div class="demo-muted">No demo events yet.</div>';
+                return;
+            }
+            demoLogs.innerHTML = events.slice().reverse().map((event) => {
+                const label = escapeHtml(event.event || 'event');
+                const ts = event.ts ? formatTimestamp(event.ts) : '—';
+                const payload = Object.entries(event)
+                    .filter(([key]) => key !== 'event' && key !== 'ts')
+                    .map(([key, value]) => `${escapeHtml(key)}=${escapeHtml(String(value))}`)
+                    .join(' · ');
+                return `
+                    <div class="demo-list-item">
+                        <div><strong>${label}</strong></div>
+                        <div class="demo-muted">${ts}${payload ? ' · ' + payload : ''}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function fetchDemoSummary() {
+            try {
+                const response = await fetch('/api/demo/summary');
+                const data = await response.json();
+                renderDemoSummary(data);
+                renderDemoRuns(data);
+            } catch (error) {
+                demoSummary.innerHTML = '<div class="demo-muted">Failed to load summary.</div>';
+                demoRuns.innerHTML = '<div class="demo-muted">Failed to load runs.</div>';
+            }
+        }
+
+        async function fetchDemoLogs() {
+            try {
+                const response = await fetch('/api/demo/logs?limit=200');
+                const data = await response.json();
+                renderDemoLogs(data.events || []);
+            } catch (error) {
+                demoLogs.innerHTML = '<div class="demo-muted">Failed to load logs.</div>';
+            }
+        }
+
+        async function refreshDemo() {
+            await Promise.all([fetchDemoSummary(), fetchDemoLogs()]);
+        }
+
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             connectWebSocket();
             fetchStatus();
             fetchFeed();
+            refreshDemo();
 
             // Poll status periodically
             statusPollTimer = setInterval(fetchStatus, STATUS_POLL_INTERVAL);
 
             // Update uptime every second
             setInterval(updateUptime, 1000);
+            setInterval(refreshDemo, 15000);
 
             // Submit on Ctrl+Enter
             ideaInput.addEventListener('keydown', (e) => {

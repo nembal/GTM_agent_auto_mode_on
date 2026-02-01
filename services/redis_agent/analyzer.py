@@ -8,6 +8,7 @@ Handles:
 import asyncio
 import json
 import logging
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ from redis.asyncio import Redis
 
 from .config import get_settings
 from .monitor import get_active_experiments, get_current_metrics
+from services.tracing import init_tracing, trace_call_async
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,7 @@ async def generate_summary(redis: Redis, experiments: list[dict[str, Any]]) -> s
 
     Uses Gemini 2.0 Flash for cheap, fast analysis.
     """
+    init_tracing(os.getenv("WEAVE_PROJECT", "fullsend/redis_agent"))
     # Build experiment summaries
     summaries = []
     for exp in experiments:
@@ -91,13 +94,20 @@ Focus on: wins, concerns, and recommendations."""
         model = genai.GenerativeModel(_get_settings().redis_agent_model)
 
         # Run in thread to avoid blocking
-        response = await asyncio.to_thread(
+        response = await trace_call_async(
+            "llm.redis_agent.summary",
+            asyncio.to_thread,
             model.generate_content,
             prompt,
             generation_config=genai.GenerationConfig(
                 temperature=0.2,
                 max_output_tokens=200,
             ),
+            trace_meta={
+                "model": _get_settings().redis_agent_model,
+                "experiment_count": len(experiments),
+                "prompt_chars": len(prompt),
+            },
         )
 
         return response.text
@@ -157,6 +167,7 @@ async def analyze_experiment_metrics(redis: Redis, exp_id: str) -> str:
 
     This is for on-demand analysis of a specific experiment.
     """
+    init_tracing(os.getenv("WEAVE_PROJECT", "fullsend/redis_agent"))
     from .monitor import get_metrics_spec
 
     # Load analyze prompt
@@ -229,13 +240,20 @@ Be concise. Facts only. No fluff."""
         genai.configure(api_key=_get_settings().google_api_key)
         model = genai.GenerativeModel(_get_settings().redis_agent_model)
 
-        response = await asyncio.to_thread(
+        response = await trace_call_async(
+            "llm.redis_agent.analyze",
+            asyncio.to_thread,
             model.generate_content,
             prompt,
             generation_config=genai.GenerationConfig(
                 temperature=0.2,
                 max_output_tokens=500,
             ),
+            trace_meta={
+                "model": _get_settings().redis_agent_model,
+                "experiment_id": exp_id,
+                "prompt_chars": len(prompt),
+            },
         )
 
         return response.text

@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # Google Gemini API Configuration
     google_api_key: str = Field(..., description="Google API key for Gemini")
     watcher_model: str = Field(
-        default="gemini-2.0-flash-exp",
+        default="gemini-3-flash-preview",
         description="Gemini model to use for classification",
     )
 
