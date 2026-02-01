@@ -17,14 +17,14 @@ Fullsend is a self-building GTM machine. It doesn't come with scrapers, enricher
 | # | Component | Runtime | Model | Role | Status |
 |---|-----------|---------|-------|------|--------|
 | 1 | Discord Service | Python daemon | None | Front door — bot + dashboard | ✅ Built |
-| 2 | Watcher | API agent | Haiku | Receptionist — filters noise | To build |
-| 3 | Orchestrator | Scaffolded API agent | Opus (thinking) | Manager — context-rich decision maker | To build |
-| 4 | FULLSEND | Claude Code | Opus | The brain — designs experiments + metrics | To build |
-| 5 | Builder | Claude Code (REPL) | Sonnet/Opus | Constructor — builds tools/skills from PRDs | To build |
-| 6 | Executor | Cron workers | None (runs tools) | Runner — executes scheduled experiments | To build |
-| 7 | Redis Agent | API agent | Haiku/Sonnet | Analyst — monitors metrics, surfaces insights | To build |
+| 2 | Watcher | API agent | Gemini 2.0 Flash | Receptionist — filters noise | To build |
+| 3 | Orchestrator | Python daemon | Claude Opus 4 (thinking) | Manager — context-rich decision maker | To build |
+| 4 | FULLSEND | Claude Code instance | Claude Sonnet/Opus via CLI | The brain — designs experiments + metrics | To build |
+| 5 | Builder | Claude Code instance | Claude Sonnet/Opus via CLI | Constructor — builds tools/skills from PRDs | To build |
+| 6 | Executor | Worker pool | None (runs tools) | Runner — executes scheduled experiments | To build |
+| 7 | Redis Agent | API agent | Gemini 2.0 Flash | Analyst — monitors metrics, surfaces insights | Partially built (align to PRD) |
 | 8 | Redis | Infrastructure | N/A | Memory — pub/sub + persistent state | To configure |
-| 9 | Roundtable | Multi-agent API | Mixed | Creative council — AI debate for ideas | To build |
+| 9 | Roundtable | Python script | Mixed | Creative council — AI debate for ideas | Partially built (expand) |
 | 10 | Moltbook | Integration | N/A | Crowd wisdom — external idea source | To integrate |
 
 ---
@@ -49,7 +49,7 @@ Fullsend is a self-building GTM machine. It doesn't come with scrapers, enricher
                                     ↓ ↑
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        ══ REDIS BUS ══                                       │
-│  Channels: to_orchestrator | from_orchestrator | builder_tasks | metrics    │
+│  Channels: to_orchestrator | from_orchestrator | builder_tasks | builder_requests | metrics │
 │  Keys: experiments:* | tools:* | learnings:* | hypotheses:* | schedules:*   │
 └─────────────────────────────────────────────────────────────────────────────┘
            ↓ ↑                    ↓ ↑                    ↓ ↑
@@ -160,7 +160,7 @@ FULLSEND learns, designs next experiment
 
 **Container:** `fullsend-watcher`
 
-**Runtime:** API agent (Haiku — cheap, fast)
+**Runtime:** API agent (Gemini 2.0 Flash — cheap, fast)
 
 **What it is:** A cheap, fast model monitoring Discord to decide what deserves attention.
 
@@ -194,7 +194,7 @@ FULLSEND learns, designs next experiment
 
 **Container:** `fullsend-orchestrator`
 
-**Runtime:** Scaffolded API agent with thinking model (Opus with extended thinking)
+**Runtime:** Python daemon with Anthropic API (Opus with extended thinking)
 
 **What it is:** The context-rich decision maker. Doesn't write code, but deeply understands the system state and makes strategic calls.
 
@@ -211,9 +211,9 @@ FULLSEND learns, designs next experiment
 
 **What it doesn't do:** Write code, run experiments directly, make snap decisions
 
-**Context files (in repo root):**
-- `worklist.md` — current priorities, pending ideas, blocked items
-- `learnings.md` — strategic insights accumulated over time
+**Context files (in `context/`):**
+- `context/worklist.md` — current priorities, pending ideas, blocked items
+- `context/learnings.md` — strategic insights accumulated over time
 
 **Redis interactions:**
 - Reads: `experiments:*`, `learnings:tactical:*`, `tools:*`, `hypotheses:*`
@@ -236,7 +236,7 @@ FULLSEND learns, designs next experiment
 
 **Container:** `fullsend-brain`
 
-**Runtime:** Claude Code agent (or OpenCode)
+**Runtime:** Claude Code instance (not a wrapper)
 
 **What it is:** The creative strategist. Designs experiments, defines success metrics, sets schedules. Has access to skills (Claude Code tools) it can use or expand.
 
@@ -304,7 +304,7 @@ experiment:
 
 **Container:** `fullsend-builder`
 
-**Runtime:** Claude Code in REPL loop
+**Runtime:** Claude Code instance (triggered by PRD file)
 
 **What it is:** The tool factory. Receives PRDs, builds working tools/skills, tests them, registers them.
 
@@ -312,6 +312,7 @@ experiment:
 
 **What it does:**
 - Receives PRDs from Orchestrator or FULLSEND
+- Reads PRD from `services/builder/requests/current_prd.yaml`
 - Builds Python tools/skills in `tools/` directory
 - Tests the tools work correctly
 - **Commits directly to main** (YOLO mode)
@@ -348,7 +349,7 @@ prd:
 ```
 
 **Redis interactions:**
-- Subscribes to: `fullsend:builder_tasks`
+- Subscribes to: `fullsend:builder_tasks` and `fullsend:builder_requests`
 - Publishes to: `fullsend:builder_results`
 - Writes: `tools:{name}` (registry entries)
 
@@ -360,14 +361,14 @@ prd:
 
 **Container:** `fullsend-executor`
 
-**Runtime:** Cron-triggered worker pool (no LLM, just runs tools)
+**Runtime:** Worker pool (no LLM, just runs tools)
 
 **What it is:** The workhorse. Executes scheduled experiments by running the specified tools with the specified parameters.
 
 **Personality:** Reliable, tireless, reports everything.
 
 **What it does:**
-- Watches schedule triggers (cron)
+- Watches schedule triggers (trigger | cron | speedrun)
 - Pulls experiment definitions from Redis
 - Loads required tools from registry
 - Executes tools with specified parameters
@@ -385,11 +386,11 @@ prd:
 
 ## 7. REDIS AGENT (The Analyst)
 
-**Status:** To build
+**Status:** Partially built (existing `services/redis/redis_agent.py`, needs PRD alignment)
 
 **Container:** `fullsend-redis-agent`
 
-**Runtime:** API agent (Haiku or Sonnet)
+**Runtime:** Python daemon with Gemini 2.0 Flash
 
 **What it is:** The metrics watcher. Monitors the metrics that FULLSEND defined for each experiment and surfaces insights.
 
@@ -459,11 +460,11 @@ prd:
 
 ## 9. ROUNDTABLE (The Creative Council)
 
-**Status:** To build
+**Status:** Partially built (existing `services/roundtable/`, expand to PRD)
 
 **Container:** `fullsend-roundtable`
 
-**Runtime:** Multi-agent API orchestration
+**Runtime:** Python script running multi-agent debate
 
 **What it is:** A structured debate between multiple AI agents to generate novel ideas or solve hard problems.
 
@@ -477,8 +478,8 @@ prd:
 
 **How it works:**
 1. Orchestrator sends a prompt + context (learnings so far)
-2. Roundtable spawns 3-5 agents with different "personas"
-3. Agents debate, build on each other's ideas
+2. Roundtable runs 3 agents (ARTIST, BUSINESS, TECH) for 3 rounds
+3. Summarizer distills into 3-5 actionable tasks
 4. Final synthesis returned to Orchestrator
 
 **Agent personas (examples):**
