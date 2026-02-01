@@ -87,11 +87,11 @@ class RedisBus:
 
         if self._pubsub is not None:
             await self._pubsub.unsubscribe()
-            await self._pubsub.close()
+            await self._pubsub.aclose()
             self._pubsub = None
 
         if self._redis is not None:
-            await self._redis.close()
+            await self._redis.aclose()
             self._redis = None
 
         self._callbacks.clear()

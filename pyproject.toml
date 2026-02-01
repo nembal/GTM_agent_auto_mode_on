@@ -50,13 +50,25 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["services"]
+filterwarnings = [
+    "ignore:`sentry_sdk.Hub` is deprecated.*",
+    "ignore:Accessing the 'model_fields' attribute on the instance is deprecated.*",
+    "ignore:Read the `app_url` setting from the appropriate Settings object.*:DeprecationWarning",
+]
 
 [dependency-groups]
 dev = [
     "aiofiles>=25.1.0",
     "anthropic>=0.77.0",
+    "discord-py>=2.6.4",
     "fakeredis>=2.33.0",
-    "google-generativeai>=0.8.6",
+    "fastapi>=0.128.0",
+    "google-genai>=1.61.0",
     "pydantic-settings>=2.12.0",
+    "pyyaml>=6.0",
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
     "redis>=7.1.0",
+    "uvicorn>=0.40.0",
+    "websockets>=12.0",
 ]

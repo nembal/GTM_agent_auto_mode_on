@@ -432,13 +432,13 @@ async def test_web_api_commands(base_url: str = "http://localhost:8000") -> bool
 
 async def test_websocket_connection(base_url: str = "http://localhost:8000") -> bool:
     """Test WebSocket connection to the web adapter."""
-    import websockets.client as websockets_client
+    from websockets import connect
 
     ws_url = base_url.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
     logger.info(f"Testing WebSocket connection at {ws_url}...")
 
     try:
-        async with websockets_client.connect(ws_url) as ws:
+        async with connect(ws_url) as ws:
             # Send ping
             await ws.send("ping")
             response = await asyncio.wait_for(ws.recv(), timeout=5.0)
@@ -462,7 +462,7 @@ async def test_websocket_connection(base_url: str = "http://localhost:8000") -> 
 
 async def test_websocket_receives_redis(base_url: str = "http://localhost:8000") -> bool:
     """Test that WebSocket receives messages from Redis."""
-    import websockets.client as websockets_client
+    from websockets import connect
     from .core.bus import RedisBus, CHANNEL_FROM_AGENT
 
     ws_url = base_url.replace("http://", "ws://").replace("https://", "wss://") + "/ws"
@@ -477,7 +477,7 @@ async def test_websocket_receives_redis(base_url: str = "http://localhost:8000")
         return False
 
     try:
-        async with websockets_client.connect(ws_url) as ws:
+        async with connect(ws_url) as ws:
             # Allow time for WebSocket to subscribe to Redis
             await asyncio.sleep(0.5)
 

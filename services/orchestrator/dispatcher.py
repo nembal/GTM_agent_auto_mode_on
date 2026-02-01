@@ -127,11 +127,19 @@ class Dispatcher:
         - reply_to: Original message ID (if available) for threading
         - priority: For message queue ordering
         """
+        resolved_original = original_msg.get("original_message", original_msg)
+        channel_id = resolved_original.get("channel_id") or original_msg.get("channel_id")
+        reply_to = resolved_original.get("message_id") or original_msg.get("message_id")
+        response_content = (
+            decision.payload.get("content")
+            or decision.payload.get("message")
+            or "✅ Got it — I will draft a plan and share next steps shortly."
+        )
         payload = {
             "type": "orchestrator_response",
-            "channel_id": original_msg.get("channel_id"),
-            "content": decision.payload.get("content", ""),
-            "reply_to": original_msg.get("message_id"),
+            "channel_id": channel_id,
+            "content": response_content,
+            "reply_to": reply_to,
             "priority": decision.priority,
         }
         await self.redis.publish(
@@ -140,8 +148,8 @@ class Dispatcher:
         )
         logger.info(
             f"Sent response to Discord: "
-            f"channel={original_msg.get('channel_id')}, "
-            f"content_length={len(decision.payload.get('content', ''))}"
+            f"channel={channel_id}, "
+            f"content_length={len(response_content)}"
         )
 
     async def kill_experiment(self, decision: Decision) -> None:

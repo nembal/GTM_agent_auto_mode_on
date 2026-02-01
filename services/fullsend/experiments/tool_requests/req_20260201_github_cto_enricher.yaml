@@ -1,0 +1,117 @@
+tool_request:
+  id: req_20260201_github_cto_enricher
+  name: github_cto_enricher
+  priority: high
+  requested_by: fullsend_listener
+  experiment_id: exp_20260201_cto_stargazer_email
+
+  description: |
+    Scrapes GitHub stargazers from specified repos, enriches profiles to identify
+    CTOs/engineering leaders at target company sizes, and outputs contact info
+    for email outreach.
+
+  inputs:
+    - name: repos
+      type: list[string]
+      description: "List of GitHub repos in 'owner/repo' format"
+      example: ["langchain-ai/langchain", "Significant-Gravitas/AutoGPT"]
+
+    - name: timeframe_days
+      type: integer
+      description: "Only include stars from last N days"
+      default: 180
+
+    - name: title_filters
+      type: list[string]
+      description: "Job titles to match (case insensitive)"
+      default: ["CTO", "Chief Technology Officer", "VP Engineering", "Head of Engineering"]
+
+    - name: company_size_min
+      type: integer
+      description: "Minimum company size (employees)"
+      default: 10
+
+    - name: company_size_max
+      type: integer
+      description: "Maximum company size (employees)"
+      default: 50
+
+    - name: limit
+      type: integer
+      description: "Maximum number of leads to return"
+      default: 200
+
+  outputs:
+    - name: leads
+      type: list[dict]
+      schema:
+        username: string
+        name: string
+        email: string
+        title: string
+        company: string
+        company_size: integer
+        repo_starred: string
+        starred_at: datetime
+        days_ago: integer
+        github_url: string
+        linkedin_url: string (optional)
+
+  requirements:
+    - "Use GitHub API with auth token (rate limit: 5000 req/hr)"
+    - "Handle pagination for repos with many stars"
+    - "Extract email from GitHub profile (public field)"
+    - "If no email on GitHub, attempt LinkedIn profile scraping"
+    - "Use Browserbase for LinkedIn scraping to avoid blocks"
+    - "Cache results for 24 hours (avoid re-scraping same profiles)"
+    - "Return partial results if rate limited or errored"
+    - "Log all API errors and rate limit hits"
+
+  technical_notes:
+    github_api:
+      endpoint: "GET /repos/{owner}/{repo}/stargazers"
+      params:
+        - "headers: Accept: application/vnd.github.v3.star+json (to get starred_at timestamp)"
+        - "per_page: 100"
+        - "page: iterate until timeframe cutoff"
+
+    enrichment_flow:
+      - "Get stargazer list with timestamps"
+      - "Filter by timeframe"
+      - "Fetch user profile: GET /users/{username}"
+      - "Extract: name, email, company, bio"
+      - "If no email, check for LinkedIn URL in bio/website"
+      - "If LinkedIn found, scrape for title/company size"
+      - "Filter by title_filters and company_size"
+
+    linkedin_scraping:
+      - "Use Browserbase headless browser"
+      - "Navigate to LinkedIn profile"
+      - "Extract: current title, company, company size"
+      - "Respect rate limits (max 100 profiles/hr)"
+
+    caching:
+      - "Key: github_username"
+      - "TTL: 24 hours"
+      - "Store in Redis"
+
+  dependencies:
+    - pygithub or httpx for GitHub API
+    - browserbase SDK (already available)
+    - redis for caching
+    - pydantic for output validation
+
+  success_criteria:
+    - "Returns at least 50 qualified leads from 1000 stargazers"
+    - "Handles GitHub rate limits gracefully"
+    - "Completes enrichment of 200 profiles in under 30 minutes"
+    - "No crashes on missing profile fields"
+
+  testing:
+    - "Test with langchain-ai/langchain (high volume repo)"
+    - "Test with small repo (<100 stars)"
+    - "Test rate limit handling (mock 403 responses)"
+    - "Test LinkedIn fallback when no GitHub email"
+
+  estimated_complexity: "Medium (3-4 hours)"
+  estimated_cost: "$0 (GitHub API free, Browserbase on existing plan)"

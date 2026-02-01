@@ -7,7 +7,8 @@ import os
 from pathlib import Path
 from typing import Any, Literal, Optional
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from pydantic import BaseModel
 
 from .retry import ModelCallError, retry_model_call
@@ -92,9 +93,10 @@ def parse_classification(response_text: str) -> Classification:
 
 
 async def _call_gemini_classify(
-    model: Any,
+    client: genai.Client,
+    model: str,
     prompt: str,
-    generation_config: Any,
+    generation_config: types.GenerateContentConfig,
 ) -> str:
     """Make the actual Gemini API call for classification.
 
@@ -103,15 +105,16 @@ async def _call_gemini_classify(
     response = await trace_call_async(
         "llm.watcher.classify",
         asyncio.to_thread,
-        model.generate_content,
-        prompt,
-        generation_config=generation_config,
+        client.models.generate_content,
+        model=model,
+        contents=prompt,
+        config=generation_config,
         trace_meta={
-            "model": getattr(model, "model_name", None) or getattr(model, "model", None),
+            "model": model,
             "prompt_chars": len(prompt),
         },
     )
-    return response.text
+    return getattr(response, "text", "") or ""
 
 
 async def classify(msg: dict[str, Any], settings: Any) -> Classification:
@@ -130,8 +133,7 @@ async def classify(msg: dict[str, Any], settings: Any) -> Classification:
         ModelCallError: If all retry attempts fail
     """
     init_tracing(os.getenv("WEAVE_PROJECT", "fullsend/watcher"))
-    # Configure Gemini API
-    genai.configure(api_key=settings.google_api_key)
+    client = genai.Client(api_key=settings.google_api_key)
 
     # Load and format prompt
     prompt_template = load_prompt("classify.txt")
@@ -141,15 +143,15 @@ async def classify(msg: dict[str, Any], settings: Any) -> Classification:
     prompt = prompt.replace("{{content}}", msg.get("content", ""))
 
     # Call Gemini model with retry logic
-    model = genai.GenerativeModel(settings.watcher_model)
-    generation_config = genai.GenerationConfig(
+    generation_config = types.GenerateContentConfig(
         temperature=settings.classification_temperature,
         max_output_tokens=settings.classification_max_tokens,
     )
 
     response_text = await retry_model_call(
         _call_gemini_classify,
-        model,
+        client,
+        settings.watcher_model,
         prompt,
         generation_config,
         max_attempts=settings.model_retry_attempts,

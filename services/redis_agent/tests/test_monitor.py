@@ -61,7 +61,7 @@ async def redis() -> AsyncGenerator[Any, None]:
     """Create a fake Redis instance for testing."""
     fake_redis = fakeredis.FakeRedis()
     yield fake_redis
-    await fake_redis.close()
+    await fake_redis.aclose()
 
 
 @pytest.fixture(autouse=True)

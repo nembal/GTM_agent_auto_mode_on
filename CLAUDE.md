@@ -32,6 +32,28 @@ ENV=both uv run python -m services.discord.main   # both
 # Run Watcher service
 uv run python -m services.watcher.main
 
+# Run Orchestrator service
+uv run python -m services.orchestrator.main
+
+# Run Executor service
+SCHEDULE_MODE=trigger uv run python -m services.executor.main
+
+# Run Redis Agent service
+uv run python -m services.redis_agent.main
+
+# Run FULLSEND Listener (bridges Redis → Claude Code)
+uv run python -m services.fullsend.listener
+
+# Run Builder Listener (bridges Redis → Claude Code)
+uv run python -m services.builder.listener
+
+# Run ALL services at once
+./run_all.sh
+
+# Test e2e wiring
+./scripts/test_e2e_wiring.sh subs    # Check Redis subscriptions
+./scripts/test_e2e_wiring.sh all     # Run all wiring tests
+
 # Run Roundtable (multi-agent ideation)
 ./run_roundtable.sh "Topic: What GTM channels should we try next?"
 # Or manually:
@@ -46,36 +68,52 @@ python -m tools.register --all
 
 ### Service Communication Pattern
 All services communicate via Redis pub/sub. The channel naming convention is `fullsend:{channel_name}`:
-- `fullsend:discord_raw` - Discord publishes raw messages here (Watcher subscribes)
+- `fullsend:discord_raw` - Discord publishes raw messages (Watcher subscribes)
 - `fullsend:from_orchestrator` - Orchestrator/Watcher publish responses (Discord subscribes)
-- `fullsend:to_orchestrator` - Escalations from Watcher to Orchestrator
-- `fullsend:experiment_results` - Executor publishes completion/failure notifications
+- `fullsend:to_orchestrator` - Escalations, alerts (Orchestrator subscribes)
+- `fullsend:to_fullsend` - Experiment requests (FULLSEND Listener subscribes)
+- `fullsend:builder_tasks` - Tool PRDs (Builder Listener subscribes)
+- `fullsend:metrics` - Experiment metrics (Redis Agent subscribes)
+- `fullsend:experiment_results` - Executor publishes completion/failure
+- `fullsend:execute_now` - Trigger experiment execution (Executor subscribes)
+- `fullsend:schedules` - Schedule updates (Executor subscribes)
 
-### Core Services
+### Core Services (Python Daemons)
 
-**Orchestrator** (`services/orchestrator/`) - The "brain" that makes strategic decisions using Claude with extended thinking. Receives escalations, maintains context, dispatches work.
+**Discord** (`services/discord/`) - Communication interface with Discord bot and web dashboard. Uses adapter pattern with shared message router.
 
-**Watcher** (`services/watcher/`) - Filters Discord noise using Gemini Flash. Classifies messages as ignore/answer/escalate. Handles simple queries directly, escalates complex ones to Orchestrator.
+**Watcher** (`services/watcher/`) - Filters Discord noise using Gemini Flash. Classifies messages as ignore/answer/escalate.
 
-**Executor** (`services/executor/`) - Runs experiments by loading and executing tools. Handles scheduling, metrics, retries, and failure reporting.
+**Orchestrator** (`services/orchestrator/`) - The "brain" that makes strategic decisions using Claude with extended thinking. Dispatches to FULLSEND, Builder, or responds directly.
 
-**Discord** (`services/discord/`) - Communication interface with Discord bot and web dashboard. Uses adapter pattern (`adapters/discord_adapter.py`, `adapters/web_adapter.py`) with shared message router.
+**Executor** (`services/executor/`) - Runs experiments by loading and executing tools. Three modes: trigger, cron, speedrun.
 
-**Roundtable** (`services/roundtable/`) - Multi-agent ideation where ARTIST, BUSINESS, and TECH personas discuss topics via shared transcript.
+**Redis Agent** (`services/redis_agent/`) - Monitors metrics, checks thresholds, sends alerts.
 
-**Builder** (`services/builder/`) - Creates new tools when needed. Uses templates from `services/builder/templates/`.
+**FULLSEND Listener** (`services/fullsend/listener.py`) - Bridges Redis → Claude Code. Subscribes to `to_fullsend`, spawns Claude Code to design experiments.
 
-**Redis Agent** (`services/redis_agent/`) - Monitors Redis health, analyzes patterns, sends alerts.
+**Builder Listener** (`services/builder/listener.py`) - Bridges Redis → Claude Code. Subscribes to `builder_tasks`, spawns Claude Code to build tools.
+
+### Claude Code Agents (Shell Scripts)
+
+**FULLSEND** (`services/fullsend/run.sh`) - Claude Code agent that designs experiments. Reads `requests/current.md`, outputs YAML specs, publishes to Redis.
+
+**Builder** (`services/builder/run.sh`) - Claude Code agent that builds tools. Reads `requests/current_prd.yaml`, creates Python tools, registers in Redis.
+
+**Roundtable** (`services/roundtable/`) - Multi-agent ideation with ARTIST, BUSINESS, and TECH personas.
 
 ### Tool System
-Tools live in `tools/` and are registered in Redis via `tools/register.py`. The Executor dynamically loads tools by name from the `tools/` directory. Each tool must export a function matching its name or a `run` alias.
+Tools live in `tools/` and are registered in Redis via `tools/register.py`. The Executor dynamically loads tools by name from the `tools/` directory.
 
-### Context Flow
-1. Discord receives message → publishes to Watcher
-2. Watcher classifies (ignore/answer/escalate)
-3. If escalated → Orchestrator decides action using extended thinking
-4. Orchestrator may dispatch to Executor or Builder
-5. Results flow back through Redis to Discord
+### End-to-End Flow
+1. Discord receives message → publishes to `fullsend:discord_raw`
+2. Watcher classifies → escalates to `fullsend:to_orchestrator`
+3. Orchestrator decides → dispatches to `fullsend:to_fullsend`
+4. FULLSEND Listener → writes file → spawns Claude Code
+5. Claude Code designs experiment → publishes to Redis
+6. Executor runs → publishes metrics to `fullsend:metrics`
+7. Redis Agent monitors → alerts Orchestrator on success/failure
+8. Loop continues
 
 ## Code Conventions
 

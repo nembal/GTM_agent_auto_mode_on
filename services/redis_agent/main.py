@@ -54,7 +54,7 @@ async def main() -> None:
             run_periodic_summaries(redis),
         )
     finally:
-        await redis.close()
+        await redis.aclose()
         logger.info("Redis Agent shutdown complete")
 
 

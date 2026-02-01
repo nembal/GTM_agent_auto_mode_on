@@ -88,18 +88,19 @@ Focus on: wins, concerns, and recommendations."""
         return f"Summary of {len(experiments)} experiments (Gemini not configured)"
 
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
 
-        genai.configure(api_key=_get_settings().google_api_key)
-        model = genai.GenerativeModel(_get_settings().redis_agent_model)
+        client = genai.Client(api_key=_get_settings().google_api_key)
 
         # Run in thread to avoid blocking
         response = await trace_call_async(
             "llm.redis_agent.summary",
             asyncio.to_thread,
-            model.generate_content,
-            prompt,
-            generation_config=genai.GenerationConfig(
+            client.models.generate_content,
+            model=_get_settings().redis_agent_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
                 temperature=0.2,
                 max_output_tokens=200,
             ),
@@ -113,8 +114,8 @@ Focus on: wins, concerns, and recommendations."""
         return response.text
 
     except ImportError:
-        logger.error("google-generativeai package not installed")
-        return f"Summary of {len(experiments)} experiments (missing google-generativeai)"
+        logger.error("google-genai package not installed")
+        return f"Summary of {len(experiments)} experiments (missing google-genai)"
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
         return f"Summary of {len(experiments)} experiments (API error: {e})"
@@ -235,17 +236,18 @@ Be concise. Facts only. No fluff."""
         return f"Analysis of {exp_id} (Gemini not configured)"
 
     try:
-        import google.generativeai as genai
+        from google import genai
+        from google.genai import types
 
-        genai.configure(api_key=_get_settings().google_api_key)
-        model = genai.GenerativeModel(_get_settings().redis_agent_model)
+        client = genai.Client(api_key=_get_settings().google_api_key)
 
         response = await trace_call_async(
             "llm.redis_agent.analyze",
             asyncio.to_thread,
-            model.generate_content,
-            prompt,
-            generation_config=genai.GenerationConfig(
+            client.models.generate_content,
+            model=_get_settings().redis_agent_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
                 temperature=0.2,
                 max_output_tokens=500,
             ),
@@ -259,8 +261,8 @@ Be concise. Facts only. No fluff."""
         return response.text
 
     except ImportError:
-        logger.error("google-generativeai package not installed")
-        return f"Analysis of {exp_id} (missing google-generativeai)"
+        logger.error("google-genai package not installed")
+        return f"Analysis of {exp_id} (missing google-genai)"
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
         return f"Analysis of {exp_id} (API error: {e})"

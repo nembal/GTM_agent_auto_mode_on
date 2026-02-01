@@ -19,14 +19,16 @@ Fullsend is a self-building GTM machine. It doesn't come with scrapers, enricher
 | 1 | Discord Service | Python daemon | None | Front door — bot + dashboard | ✅ Built & Reviewed |
 | 2 | Watcher | API agent | Gemini 2.0 Flash | Receptionist — filters noise | ✅ Built & Reviewed (70 tests) |
 | 3 | Orchestrator | Python daemon | Claude Opus 4 (thinking) | Manager — context-rich decision maker | ✅ Built & Reviewed (104 tests) |
-| 4 | FULLSEND | Claude Code instance | Claude Sonnet/Opus via CLI | The brain — designs experiments + metrics | ✅ Built |
-| 5 | Builder | Claude Code instance | Claude Sonnet/Opus via CLI | Constructor — builds tools/skills from PRDs | ✅ Built |
-| 6 | Executor | Worker pool | None (runs tools) | Runner — executes scheduled experiments | ✅ Built & Reviewed (64 tests) |
-| 7 | Redis Agent | API agent | Gemini 2.0 Flash | Analyst — monitors metrics, surfaces insights | ✅ Built & Reviewed |
-| 8 | Redis | Infrastructure | N/A | Memory — pub/sub + persistent state | To configure |
-| 9 | Roundtable | Python script | Mixed | Creative council — AI debate for ideas | ✅ Built & Reviewed (24 tests) |
-| 10 | Moltbook | Integration | N/A | Crowd wisdom — external idea source | To integrate |
-| 11 | Browserbase Tool | Python module | N/A | Web scraping via Browserbase API | ✅ Built |
+| 4 | FULLSEND Listener | Python daemon | None | Bridge — Redis → Claude Code | ✅ Built & Wired |
+| 5 | FULLSEND Agent | Claude Code instance | Claude Sonnet/Opus via CLI | The brain — designs experiments + metrics | ✅ Built |
+| 6 | Builder Listener | Python daemon | None | Bridge — Redis → Claude Code | ✅ Built & Wired |
+| 7 | Builder Agent | Claude Code instance | Claude Sonnet/Opus via CLI | Constructor — builds tools/skills from PRDs | ✅ Built |
+| 8 | Executor | Worker pool | None (runs tools) | Runner — executes scheduled experiments | ✅ Built & Reviewed (64 tests) |
+| 9 | Redis Agent | API agent | Gemini 2.0 Flash | Analyst — monitors metrics, surfaces insights | ✅ Built & Reviewed |
+| 10 | Redis | Infrastructure | N/A | Memory — pub/sub + persistent state | ✅ Configured |
+| 11 | Roundtable | Python script | Mixed | Creative council — AI debate for ideas | ✅ Built & Reviewed (24 tests) |
+| 12 | Moltbook | Integration | N/A | Crowd wisdom — external idea source | To integrate |
+| 13 | Browserbase Tool | Python module | N/A | Web scraping via Browserbase API | ✅ Built |
 
 ---
 
@@ -50,22 +52,29 @@ Fullsend is a self-building GTM machine. It doesn't come with scrapers, enricher
                                     ↓ ↑
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                        ══ REDIS BUS ══                                       │
-│  Channels: to_orchestrator | from_orchestrator | builder_tasks | builder_requests | metrics │
+│  Channels: to_orchestrator | from_orchestrator | to_fullsend | builder_tasks │
 │  Keys: experiments:* | tools:* | learnings:* | hypotheses:* | schedules:*   │
 └─────────────────────────────────────────────────────────────────────────────┘
            ↓ ↑                    ↓ ↑                    ↓ ↑
 ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
-│   ORCHESTRATOR   │    │     FULLSEND     │    │     BUILDER      │
-│                  │    │                  │    │                  │
-│ • Reads context  │←──→│ • Designs experi-│───→│ • Receives PRDs  │
-│ • Prioritizes    │    │   ments + metrics│    │ • Builds skills  │
-│ • Dispatches     │    │ • Sets schedules │    │ • Tests tools    │
-│ • Initiates      │    │ • Has skills     │    │ • Commits to     │
-│   Roundtable     │    │ • Can run simple │    │   registry       │
-│                  │    │   experiments    │    │                  │
-│ [Thinking Model] │    │ [Claude Code]    │    │ [Claude Code]    │
-└──────────────────┘    └──────────────────┘    └──────────────────┘
-           ↑                                              │
+│   ORCHESTRATOR   │    │ FULLSEND LISTENER│    │ BUILDER LISTENER │
+│                  │    │   [Python]       │    │   [Python]       │
+│ • Reads context  │───→│ • Subscribes to  │    │ • Subscribes to  │
+│ • Prioritizes    │    │   to_fullsend    │    │   builder_tasks  │
+│ • Dispatches     │    │ • Writes file    │    │ • Writes PRD     │
+│ • Initiates      │    │ • Spawns Claude  │    │ • Spawns Claude  │
+│   Roundtable     │    │ • Reports back   │    │ • Reports back   │
+│ [Thinking Model] │    └────────┬─────────┘    └────────┬─────────┘
+└──────────────────┘             ↓                       ↓
+           ↑            ┌──────────────────┐    ┌──────────────────┐
+           │            │  FULLSEND AGENT  │    │  BUILDER AGENT   │
+           │            │  [Claude Code]   │    │  [Claude Code]   │
+           │            │ • Designs experi-│───→│ • Receives PRDs  │
+           │            │   ments + metrics│    │ • Builds tools   │
+           │            │ • Sets schedules │    │ • Tests & commits│
+           │            │ • RALPH loops    │    │ • Registers tools│
+           │            └──────────────────┘    └──────────────────┘
+           │                                              │
            │                                              ↓
 ┌──────────────────┐    ┌──────────────────┐    ┌──────────────────┐
 │   REDIS AGENT    │    │     EXECUTOR     │    │  TOOL REGISTRY   │

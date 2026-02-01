@@ -1,0 +1,131 @@
+experiment:
+  id: exp_20260201_cto_stargazer_email
+  hypothesis: "CTOs who starred competitor repos (Langchain, AutoGPT, CrewAI) will respond to personalized cold emails about autonomous agent frameworks if we reference their GitHub activity"
+
+  target:
+    description: "CTOs at Series A startups (10-50 employees) who starred competitor agent repos in last 6 months"
+    size: 200
+    source: "GitHub stargazers API → filter by job title (LinkedIn/GitHub profile) → filter by company stage (LinkedIn/Crunchbase)"
+    exclusions:
+      - Companies with existing vendor relationships
+      - Already contacted in last 90 days
+
+  execution:
+    tool: github_cto_enricher
+    params:
+      repos:
+        - langchain-ai/langchain
+        - Significant-Gravitas/AutoGPT
+        - joaomdmoura/crewAI
+      timeframe_days: 180
+      title_filters: ["CTO", "Chief Technology Officer", "VP Engineering", "Head of Engineering"]
+      company_size_min: 10
+      company_size_max: 50
+      limit: 200
+    schedule: "0 9 * * MON"  # Weekly on Mondays at 9am
+
+  outreach:
+    channel: "email"
+    template: |
+      Subject: Re: Your star on {{repo_name}}
+
+      {{first_name}},
+
+      Saw you starred {{repo_name}} {{days_ago}} days ago. We're building something in the same space — autonomous agents that actually ship work, not just chat.
+
+      The difference: ours writes its own tools, runs experiments, and compounds knowledge over time. Like Langchain but it builds its own integrations as it goes.
+
+      Early access if you're interested. Takes 5 min to set up, then it just runs.
+
+      Worth a quick call?
+
+      – [Your name]
+      [Company]
+
+    personalization_vars:
+      - repo_name: "The specific repo they starred"
+      - days_ago: "Days since star event"
+      - first_name: "Extracted from profile"
+
+    follow_up:
+      enabled: true
+      delay_days: 4
+      template: |
+        {{first_name}},
+
+        Following up on the autonomous agents thing.
+
+        If you're dealing with repetitive GTM work (lead gen, outreach, follow-ups), this could save your team 10+ hrs/week.
+
+        Quick demo? I'll show you how it builds its own tools on the fly.
+
+        – [Your name]
+
+  metrics:
+    - name: emails_sent
+      type: counter
+      success_threshold: 180
+
+    - name: open_rate
+      type: percentage
+      success_threshold: 40
+      tracking: "Email tracking pixel"
+
+    - name: reply_rate
+      type: percentage
+      success_threshold: 8
+      tracking: "Inbox monitoring"
+
+    - name: positive_reply_rate
+      type: percentage
+      success_threshold: 4
+      tracking: "Manual classification of replies"
+
+    - name: demo_booked
+      type: counter
+      success_threshold: 5
+      tracking: "Calendar link clicks + confirmations"
+
+    - name: time_to_first_reply
+      type: duration
+      success_threshold: 72
+      unit: hours
+
+  success_criteria:
+    - "Reply rate >= 8% (16+ replies from 200 emails)"
+    - "At least 3 demo calls booked"
+    - "At least 1 'very interested' reply with clear next steps"
+
+  failure_criteria:
+    - "Reply rate < 3% after 2 weeks"
+    - "More than 5 unsubscribes or negative replies"
+    - "Open rate < 25% (indicates bad targeting or subject line)"
+
+  learning_capture:
+    - metric: reply_rate
+      segmentation: ["company_size", "repo_starred", "job_title"]
+      hypothesis_test: "Do CTOs vs VP Eng respond differently?"
+
+    - metric: positive_reply_rate
+      segmentation: ["days_since_star", "github_activity_level"]
+      hypothesis_test: "Do recent stargazers convert better?"
+
+  risk_mitigation:
+    - "Use dedicated sending domain with proper SPF/DKIM/DMARC"
+    - "Warm up email domain for 2 weeks before launch (if new)"
+    - "Cap sends at 50/day to avoid spam flags"
+    - "Include clear unsubscribe link"
+    - "Manual review of first 10 replies to check sentiment"
+
+  estimated_duration: "3 weeks"
+  estimated_cost: "$200 (Apollo/Hunter for email enrichment, SendGrid for sending)"
+
+  notes: |
+    This is a BOLD test because:
+    1. We're targeting people who showed RECENT intent (starred a competitor)
+    2. We're personalizing with actual data (repo name, timing)
+    3. We're leading with differentiation, not features
+    4. We're asking for a call, not a newsletter signup
+
+    If this works, we can scale to 1000s of repos and build a repeatable pipeline.
+    If it fails, we learn whether GitHub activity is a reliable signal.

@@ -63,7 +63,7 @@ class Settings(BaseSettings):
 
     # Context File Paths
     context_path: Path = Field(
-        default=Path("/app/context"),
+        default=REPO_ROOT / "context",
         description="Base path for context files",
     )
 

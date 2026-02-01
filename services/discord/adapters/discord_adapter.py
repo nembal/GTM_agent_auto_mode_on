@@ -4,13 +4,14 @@ import asyncio
 import json
 import logging
 import time
+from typing import Any
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from ..config import Settings, get_settings
-from ..core.bus import RedisBus, publish_to_agent, subscribe_from_agent
+from ..core.bus import CHANNEL_TO_WATCHER, RedisBus, publish_to_agent, subscribe_from_agent
 from ..core.router import MessageRouter
 from ..core.messages import (
     ActionRequest,
@@ -129,6 +130,34 @@ class DiscordAdapter:
             # Ignore empty messages
             if not message.content or not message.content.strip():
                 return
+
+            # Publish raw message to Redis for Watcher classification
+            if self.redis_bus and self.redis_bus.is_connected:
+                try:
+                    mentions_bot = False
+                    if self.bot.user is not None:
+                        mentions_bot = self.bot.user in message.mentions
+
+                    await self.redis_bus.publish(
+                        CHANNEL_TO_WATCHER,
+                        {
+                            "username": str(message.author),
+                            "user_id": str(message.author.id),
+                            "content": message.content,
+                            "channel_name": channel_name,
+                            "channel_id": str(message.channel.id),
+                            "message_id": str(message.id),
+                            "mentions_bot": mentions_bot,
+                        },
+                    )
+
+                    if mentions_bot:
+                        await message.reply(
+                            "✅ Got it — give me a sec, I’m on it.",
+                            mention_author=False,
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to publish message to Watcher: {e}")
 
             # Check if we've already reacted to this message
             if message.id in self.reacted_messages:
@@ -293,6 +322,13 @@ class DiscordAdapter:
         """
         try:
             message_data = json.loads(data)
+            if message_data.get("type") == "watcher_response":
+                await self._post_watcher_response(message_data)
+                return
+            if message_data.get("type") == "orchestrator_response":
+                await self._post_orchestrator_response(message_data)
+                return
+
             agent_message = AgentMessage(**message_data)
 
             # Handle action_request messages
@@ -312,6 +348,57 @@ class DiscordAdapter:
             logger.error(f"Failed to parse agent message JSON: {e}")
         except Exception as e:
             logger.error(f"Error handling agent message: {e}")
+
+    async def _post_watcher_response(self, payload: dict[str, Any]) -> None:
+        """Post a Watcher response directly in the originating channel."""
+        await self._post_direct_response(payload, "Watcher")
+
+    async def _post_orchestrator_response(self, payload: dict[str, Any]) -> None:
+        """Post an Orchestrator response directly in the originating channel."""
+        await self._post_direct_response(payload, "Orchestrator")
+
+    async def _post_direct_response(self, payload: dict[str, Any], source: str) -> None:
+        channel_id = payload.get("channel_id")
+        content = payload.get("content")
+        reply_to = payload.get("reply_to")
+
+        if not channel_id or not content:
+            logger.error("%s response missing channel_id or content", source)
+            return
+
+        try:
+            channel = self.bot.get_channel(int(channel_id))
+            if channel is None:
+                channel = await self.bot.fetch_channel(int(channel_id))
+
+            reference = None
+            if reply_to:
+                reference = discord.MessageReference(
+                    message_id=int(reply_to),
+                    channel_id=int(channel_id),
+                )
+
+            await channel.send(content, reference=reference, mention_author=False)
+            logger.info("Posted %s response to channel %s", source, channel_id)
+
+            status_channel = None
+            for guild in self.bot.guilds:
+                for candidate in guild.text_channels:
+                    if candidate.name == self.settings.status_channel:
+                        status_channel = candidate
+                        break
+                if status_channel:
+                    break
+
+            if status_channel and status_channel.id != channel.id:
+                preview = content.strip().replace("\n", " ")
+                if len(preview) > 200:
+                    preview = f"{preview[:200]}..."
+                await status_channel.send(
+                    f"📣 {source} replied in #{channel.name}: {preview}",
+                )
+        except Exception as e:
+            logger.error("Failed to post %s response: %s", source, e)
 
     async def _post_action_request(self, payload: dict) -> None:
         """Post an action request to the status channel.

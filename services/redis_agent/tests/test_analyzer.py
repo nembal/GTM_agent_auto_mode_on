@@ -57,7 +57,7 @@ async def redis() -> AsyncGenerator[Any, None]:
     """Create a fake Redis instance for testing."""
     fake_redis = fakeredis.FakeRedis()
     yield fake_redis
-    await fake_redis.close()
+    await fake_redis.aclose()
 
 
 class TestMetricsFormatting:
@@ -108,22 +108,22 @@ class TestGenerateSummary:
 
     @pytest.mark.asyncio
     async def test_generate_summary_missing_package(self, redis, mock_settings, monkeypatch):
-        """Handles missing google-generativeai package gracefully."""
+        """Handles missing google-genai package gracefully."""
         experiments = [{"id": "exp_1"}]
         mock_settings.google_api_key = "test-key"
 
         original_import = builtins.__import__
 
         def fake_import(name, *args, **kwargs):
-            if name == "google.generativeai":
-                raise ImportError("No module named google.generativeai")
+            if name in ("google", "google.genai"):
+                raise ImportError("No module named google.genai")
             return original_import(name, *args, **kwargs)
 
         monkeypatch.setattr(builtins, "__import__", fake_import)
         result = await generate_summary(redis, experiments)
 
         assert "1 experiments" in result
-        assert "missing google-generativeai" in result
+        assert "missing google-genai" in result
 
 
 class TestAnalyzeExperimentMetrics:

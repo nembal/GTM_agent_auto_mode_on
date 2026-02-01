@@ -17,7 +17,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import redis.asyncio as redis
 
 from .classifier import Classification
@@ -85,9 +86,10 @@ async def get_system_status(redis_client: redis.Redis) -> dict[str, Any]:
 
 
 async def _call_gemini_response(
-    model: Any,
+    client: genai.Client,
+    model: str,
     prompt: str,
-    generation_config: Any,
+    generation_config: types.GenerateContentConfig,
 ) -> str:
     """Make the actual Gemini API call for response generation.
 
@@ -96,15 +98,16 @@ async def _call_gemini_response(
     response = await trace_call_async(
         "llm.watcher.respond",
         asyncio.to_thread,
-        model.generate_content,
-        prompt,
-        generation_config=generation_config,
+        client.models.generate_content,
+        model=model,
+        contents=prompt,
+        config=generation_config,
         trace_meta={
-            "model": getattr(model, "model_name", None) or getattr(model, "model", None),
+            "model": model,
             "prompt_chars": len(prompt),
         },
     )
-    return response.text
+    return getattr(response, "text", "") or ""
 
 
 def format_recent_activity(recent_runs: list[str]) -> str:
@@ -164,7 +167,7 @@ async def generate_response(
         return classification.suggested_response
 
     # Otherwise, generate a response using current system state
-    genai.configure(api_key=settings.google_api_key)
+    client = genai.Client(api_key=settings.google_api_key)
 
     # Get current system status from Redis
     status_info = await get_system_status(redis_client)
@@ -191,15 +194,15 @@ async def generate_response(
     prompt = prompt.replace("{{recent_activity}}", recent_activity)
 
     # Call Gemini model with retry logic
-    model = genai.GenerativeModel(settings.watcher_model)
-    generation_config = genai.GenerationConfig(
+    generation_config = types.GenerateContentConfig(
         temperature=settings.response_temperature,
         max_output_tokens=settings.response_max_tokens,
     )
 
     response_text = await retry_model_call(
         _call_gemini_response,
-        model,
+        client,
+        settings.watcher_model,
         prompt,
         generation_config,
         max_attempts=settings.model_retry_attempts,
