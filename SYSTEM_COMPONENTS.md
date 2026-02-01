@@ -101,6 +101,99 @@ Fullsend is a self-building GTM machine. It doesn't come with scrapers, enricher
 
 ---
 
+## Redis Pub/Sub Wiring
+
+Complete mapping of which services publish/subscribe to which channels.
+
+### Channel Flow Diagram
+
+```mermaid
+flowchart TB
+    subgraph input [Input Layer]
+        User[User on Discord]
+    end
+    
+    subgraph services [Services]
+        Discord[Discord]
+        Watcher[Watcher]
+        Orchestrator[Orchestrator]
+        FULLSEND[FULLSEND Listener]
+        Builder[Builder Listener]
+        Executor[Executor]
+        RedisAgent[Redis Agent]
+    end
+    
+    User -->|message| Discord
+    Discord -->|discord_raw| Watcher
+    Watcher -->|to_orchestrator| Orchestrator
+    Watcher -->|from_orchestrator| Discord
+    Orchestrator -->|from_orchestrator| Discord
+    Orchestrator -->|to_fullsend| FULLSEND
+    Orchestrator -->|builder_tasks| Builder
+    FULLSEND -->|builder_tasks| Builder
+    FULLSEND -->|execute_now| Executor
+    Builder -->|builder_results| FULLSEND
+    Executor -->|metrics| RedisAgent
+    Executor -->|experiment_results| FULLSEND
+    RedisAgent -->|to_orchestrator| Orchestrator
+    FULLSEND -->|to_orchestrator| Orchestrator
+    Builder -->|to_orchestrator| Orchestrator
+    Discord -->|reply| User
+```
+
+### Pub/Sub Matrix
+
+| Service | Subscribes To | Publishes To |
+|---------|---------------|--------------|
+| **Discord** | `fullsend:from_orchestrator` | `fullsend:discord_raw` |
+| **Watcher** | `fullsend:discord_raw` | `fullsend:from_orchestrator` (simple responses), `fullsend:to_orchestrator` (escalations) |
+| **Orchestrator** | `fullsend:to_orchestrator` | `fullsend:from_orchestrator`, `fullsend:to_fullsend`, `fullsend:builder_tasks` |
+| **FULLSEND Listener** | `fullsend:to_fullsend`, `fullsend:builder_results`, `fullsend:experiment_results` | `fullsend:to_orchestrator`, `fullsend:execute_now`, `fullsend:builder_tasks` |
+| **Builder Listener** | `fullsend:builder_tasks` | `fullsend:builder_results`, `fullsend:to_orchestrator` |
+| **Executor** | `fullsend:execute_now`, `fullsend:schedules` | `fullsend:metrics`, `fullsend:experiment_results` |
+| **Redis Agent** | `fullsend:metrics` | `fullsend:to_orchestrator` (alerts) |
+
+### Channel Reference
+
+| Channel | Purpose | Publishers | Subscribers |
+|---------|---------|------------|-------------|
+| `fullsend:discord_raw` | Raw Discord messages | Discord | Watcher |
+| `fullsend:to_orchestrator` | Escalations, alerts, notifications | Watcher, Redis Agent, FULLSEND, Builder | Orchestrator |
+| `fullsend:from_orchestrator` | Responses back to Discord | Orchestrator, Watcher | Discord |
+| `fullsend:to_fullsend` | Experiment design requests | Orchestrator | FULLSEND Listener |
+| `fullsend:builder_tasks` | Tool PRDs to build | Orchestrator, FULLSEND | Builder Listener |
+| `fullsend:builder_results` | Tool build completions | Builder | FULLSEND Listener |
+| `fullsend:execute_now` | Trigger experiment execution | FULLSEND | Executor |
+| `fullsend:experiment_results` | Execution outcomes | Executor | FULLSEND Listener |
+| `fullsend:metrics` | Real-time experiment metrics | Executor | Redis Agent |
+| `fullsend:schedules` | Schedule updates | FULLSEND | Executor |
+
+### Message Flow Examples
+
+**Simple Question (Watcher handles):**
+```
+User → Discord → discord_raw → Watcher → from_orchestrator → Discord → User
+```
+
+**Strategic Question (Orchestrator handles):**
+```
+User → Discord → discord_raw → Watcher → to_orchestrator → Orchestrator → from_orchestrator → Discord → User
+```
+
+**Experiment Design (Full loop):**
+```
+Orchestrator → to_fullsend → FULLSEND → [designs] → execute_now → Executor → metrics → Redis Agent
+                                     ↓
+                          [needs tool] → builder_tasks → Builder → builder_results → FULLSEND → execute_now
+```
+
+**Error Recovery:**
+```
+Executor → experiment_results [error] → FULLSEND → [ToolNotFound] → builder_tasks → Builder → builder_results → FULLSEND → execute_now → Executor
+```
+
+---
+
 ## Core Concepts
 
 ### Experiments vs Tools (Skills)
@@ -440,17 +533,7 @@ prd:
 
 ### Pub/Sub Channels
 
-| Channel | Publishers | Subscribers | Purpose |
-|---------|-----------|-------------|---------|
-| `fullsend:discord_raw` | Discord Service | Watcher | Raw Discord messages |
-| `fullsend:to_orchestrator` | Watcher, Redis Agent, FULLSEND | Orchestrator | Escalations, alerts, requests |
-| `fullsend:from_orchestrator` | Orchestrator | Discord Service | Status updates, responses |
-| `fullsend:to_fullsend` | Orchestrator | FULLSEND | Experiment requests |
-| `fullsend:builder_tasks` | Orchestrator, FULLSEND | Builder | PRDs to build |
-| `fullsend:builder_results` | Builder | Orchestrator | Completed tools |
-| `fullsend:metrics` | Executor | Redis Agent | Real-time metrics stream |
-| `fullsend:experiment_results` | Executor | Orchestrator | Experiment completions |
-| `fullsend:schedules` | FULLSEND | Executor | Schedule updates |
+See **Redis Pub/Sub Wiring** section above for complete channel documentation with flow diagrams.
 
 ### Persistent Keys
 
