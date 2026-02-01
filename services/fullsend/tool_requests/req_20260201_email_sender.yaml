@@ -1,0 +1,142 @@
+tool_request:
+  id: req_20260201_email_sender
+  name: email_sender
+  priority: high
+
+  description: |
+    Cold email sender tool that handles personalized outreach campaigns with
+    template variables, follow-up sequences, and deliverability best practices.
+
+    Must support:
+    - Personalized template variables ({{first_name}}, {{repo_name}}, etc.)
+    - Follow-up sequences with configurable delays
+    - Rate limiting to avoid spam flags
+    - SPF/DKIM/DMARC validation
+    - Bounce and unsubscribe handling
+    - Delivery tracking (sent, opened, replied)
+    - Redis metrics publishing
+
+  inputs:
+    - name: recipients
+      type: list[dict]
+      description: |
+        List of recipient objects with fields:
+        - email: str (required)
+        - first_name: str (optional)
+        - last_name: str (optional)
+        - company: str (optional)
+        - Additional custom fields for template variables
+      example:
+        - email: "cto@example.com"
+          first_name: "Jane"
+          repo_name: "vercel/next.js"
+          days_ago: 7
+
+    - name: subject_template
+      type: string
+      description: "Subject line with {{variable}} support"
+      example: "Re: {{repo_name}}"
+
+    - name: body_template
+      type: string
+      description: "Email body with {{variable}} support, supports multiline"
+
+    - name: from_email
+      type: string
+      description: "Sender email address (must have SPF/DKIM configured)"
+      example: "outreach@fullsend.ai"
+
+    - name: from_name
+      type: string
+      description: "Sender display name"
+      default: "Fullsend Team"
+
+    - name: follow_up_enabled
+      type: boolean
+      default: false
+
+    - name: follow_up_delay_days
+      type: integer
+      description: "Days to wait before sending follow-up"
+      default: 5
+
+    - name: follow_up_template
+      type: string
+      description: "Follow-up email body template"
+      optional: true
+
+    - name: rate_limit_per_hour
+      type: integer
+      description: "Max emails per hour to send"
+      default: 50
+
+    - name: experiment_id
+      type: string
+      description: "Experiment ID for tracking metrics"
+
+  outputs:
+    - name: emails_sent
+      type: integer
+      description: "Total emails successfully sent"
+
+    - name: emails_failed
+      type: integer
+      description: "Emails that failed to send"
+
+    - name: emails_bounced
+      type: list[str]
+      description: "Email addresses that bounced"
+
+    - name: emails_opened
+      type: integer
+      description: "Emails that were opened (if tracking enabled)"
+
+    - name: replies_received
+      type: integer
+      description: "Number of replies received"
+
+    - name: unsubscribes
+      type: list[str]
+      description: "Email addresses that unsubscribed"
+
+  requirements:
+    - "Use professional email service (SendGrid, Postmark, or similar)"
+    - "Validate SPF/DKIM/DMARC before sending"
+    - "Implement exponential backoff for rate limiting"
+    - "Track opens via pixel (optional, configurable)"
+    - "Honor unsubscribe requests immediately"
+    - "Publish metrics to Redis at fullsend:metrics channel"
+    - "Store campaign state in Redis for resume capability"
+    - "Log all sends to persistent storage for audit"
+    - "Support dry-run mode for testing templates"
+    - "Handle timezone-aware scheduling"
+
+  integration:
+    - "Must work with github_stargazer_scraper output format"
+    - "Executor service will call via dynamic import"
+    - "Publish metrics compatible with Redis Agent thresholds"
+
+  testing:
+    - "Unit tests for template variable replacement"
+    - "Integration test with test@mailinator.com"
+    - "Rate limit validation tests"
+    - "Unsubscribe handling tests"
+    - "Redis publish verification"
+
+  security:
+    - "Store API keys in environment variables only"
+    - "Never log email content or recipient PII"
+    - "Validate email addresses to prevent injection"
+    - "Implement unsubscribe link in all emails"
+
+  notes: |
+    This is a critical tool for all email-based GTM experiments.
+
+    Preferred email service: Postmark (cleaner API, better deliverability)
+    Alternative: SendGrid (more features, higher complexity)
+
+    Must support both immediate sends and scheduled campaigns.
+    The Executor will handle cron scheduling, this tool just executes.
+
+    For v1: Focus on basic send + metrics publishing.
+    For v2: Add follow-up sequences, A/B testing, advanced tracking.

@@ -1,0 +1,122 @@
+experiment:
+  id: exp_20260201_cto_competitor_stars
+  hypothesis: "CTOs who recently starred competitor repos show buying intent and will respond to personalized outreach that references their specific interests"
+
+  target:
+    description: "CTOs at Series A startups who starred competitor repos in the last 30 days"
+    size: 200
+    source: "GitHub stargazer lists from competitor repos (vercel/next.js, supabase/supabase, etc.)"
+
+  execution:
+    tool: github_stargazer_scraper
+    params:
+      repos:
+        - "vercel/next.js"
+        - "supabase/supabase"
+        - "hasura/graphql-engine"
+        - "trpc/trpc"
+        - "prisma/prisma"
+      max_results: 200
+      days_ago: 30
+      filter_job_titles:
+        - "CTO"
+        - "Chief Technology Officer"
+        - "VP Engineering"
+        - "Head of Engineering"
+      filter_company_stage: "Series A"
+    schedule: "0 9 * * MON"  # Every Monday at 9 AM
+    timezone: "America/Los_Angeles"
+
+  outreach:
+    channel: "email"
+    subject_template: "Re: {{repo_name}}"
+    template: |
+      Hey {{first_name}},
+
+      Saw you starred {{repo_name}} {{days_ago}} days ago — we're solving a similar problem but specifically for GTM teams at Series A+ companies.
+
+      Most eng teams at your stage hit a wall when sales wants "just one more integration" every week. We built Fullsend to run autonomous GTM experiments without pulling engineers off the roadmap.
+
+      Built on the same stack you're already using (Next.js + Supabase patterns), but with agent loops that generate ideas, build their own tools, and learn from results.
+
+      Worth 15 min to see if it clicks?
+
+      Best,
+      [Your Name]
+
+      PS - If you're not the right person, mind pointing me to whoever owns your GTM tooling?
+
+    follow_up_delay_days: 5
+    follow_up_template: |
+      {{first_name}},
+
+      Following up on my note about autonomous GTM experiments.
+
+      Quick question: What's your current process when sales wants to test a new outbound channel (like cold email to {{repo_name}} stargazers)?
+
+      Most CTOs tell us: "Sales writes a spec, eng builds it in 2 weeks, idea is stale by then."
+
+      We eliminate that cycle entirely. Curious if you've found a better way?
+
+      [Your Name]
+
+  metrics:
+    - name: emails_sent
+      type: counter
+      success_threshold: 180  # At least 90% delivery
+
+    - name: emails_opened
+      type: percentage
+      success_threshold: 35  # Industry avg is ~25%
+
+    - name: replies_received
+      type: counter
+      success_threshold: 16  # 8%+ reply rate (per tactical learning)
+
+    - name: reply_rate
+      type: percentage
+      success_threshold: 8
+
+    - name: meetings_booked
+      type: counter
+      success_threshold: 5  # 2.5% meeting rate
+
+    - name: positive_replies
+      type: counter
+      description: "Replies expressing interest (not unsubscribes/negatives)"
+      success_threshold: 12
+
+  success_criteria:
+    - "Reply rate >= 8% (matches or exceeds previous experiment)"
+    - "At least 5 meetings booked (2.5% conversion)"
+    - "Positive sentiment in 75%+ of replies"
+    - "Zero spam complaints or LinkedIn callouts"
+
+  failure_criteria:
+    - "Reply rate < 5%"
+    - "More than 2 spam complaints"
+    - "Zero meetings booked after 2 weeks"
+    - "Negative sentiment in >50% of replies"
+
+  learning_goals:
+    - "Does 'Re:' subject line still outperform direct subject?"
+    - "Is 30-day recency better than 90-day for intent signal?"
+    - "Do follow-ups increase meeting rate by >3x?"
+    - "Which competitor repo context gets best response?"
+
+  risk_mitigation:
+    - "Test with 50 emails first, review replies before scaling"
+    - "Use professional email domain with proper SPF/DKIM/DMARC"
+    - "Honor unsubscribes immediately via redis_agent monitoring"
+    - "Track spam complaints, auto-pause at threshold"
+
+  notes: |
+    Building on tactical learning from exp_20260201_cto_stargazer_email which tested
+    similar hypothesis. This version adds:
+    - Multi-repo targeting for broader funnel
+    - Follow-up sequence to test persistence value
+    - Tighter recency window (30d vs unclear in previous)
+    - Explicit learning goals per repo source
+
+    Tool available: github_stargazer_scraper
+    Required: Email sender tool (request from Builder if not exists)
