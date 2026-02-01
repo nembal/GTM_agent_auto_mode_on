@@ -5,8 +5,13 @@ description = "Autonomous GTM agent that ships ideas continuously"
 requires-python = ">=3.11"
 readme = "README.md"
 
-# Root package has no direct dependencies - services define their own
-dependencies = []
+# Root deps for scripts (redis agent, roundtable) that don't have their own package
+dependencies = [
+    "langchain-openai>=0.2.0",
+    "langchain-core>=0.2.0",
+    "python-dotenv>=1.0.0",
+    "weave>=0.50.0",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -20,7 +25,8 @@ dev = [
 package = false
 
 [tool.uv.workspace]
-members = ["services/*"]
+# Only services with pyproject.toml are workspace members (discord). redis/ and roundtable/ are scripts under root deps.
+members = ["services/discord"]
 
 [tool.uv.sources]
 # Allow workspace packages to depend on each other
