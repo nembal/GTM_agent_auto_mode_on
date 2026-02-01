@@ -4,43 +4,61 @@
 
 **Role:** The creative strategist — designs experiments, defines success metrics, sets schedules. Has access to tools/skills it can use or request. This is where GTM ideas become executable experiment specs.
 
-**Runtime:** Python service that spawns Claude Code in RALPH loops
-**Model:** Claude Code CLI (Sonnet/Opus) spawning more Claude Codes
+**Runtime:** Claude Code instance (NOT a wrapper — FULLSEND IS Claude Code)
+**Model:** Claude Sonnet/Opus via Claude Code CLI
 **Container:** `fullsend-brain`
 
 ---
 
-## Architecture: RALPH Loops
+## Architecture: FULLSEND IS Claude Code
 
-FULLSEND uses the **RALPH pattern** — a task loop where Claude Code iterates through tasks with persistent memory.
+FULLSEND is not a Python service that spawns Claude Code. **FULLSEND IS Claude Code.**
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                      FULLSEND Service                        │
+│                  FULLSEND = Claude Code                      │
 │                                                              │
-│  1. Receive experiment request from Orchestrator             │
-│  2. Create TASKS.md for this experiment                      │
-│  3. Create STATUS.md for context/memory                      │
-│  4. Spawn Claude Code in RALPH loop                          │
-│  5. Claude Code iterates: task → do → mark done → next       │
-│  6. Collect results, publish experiment spec                 │
+│  Has tools:                                                  │
+│  • Edit, Write, Read, Bash, Glob, Grep                      │
+│  • Redis read/write (via bash + redis-cli or MCP)           │
+│  • Browserbase for web research                             │
+│                                                              │
+│  Can do:                                                     │
+│  • Research directly (scrape, read files, query Redis)       │
+│  • Design experiments (write YAML specs)                     │
+│  • Spawn RALPH loops for complex multi-step builds           │
+│  • Request tools from Builder                                │
 └─────────────────────────────────────────────────────────────┘
-
-RALPH Loop:
-┌──────────┐     ┌──────────┐     ┌──────────┐     ┌──────────┐
-│  Read    │────→│  Do      │────→│  Update  │────→│  Mark    │
-│ TASKS.md │     │  Task    │     │STATUS.md │     │  Done    │
-└──────────┘     └──────────┘     └──────────┘     └──────────┘
-      ↑                                                  │
-      └──────────────────────────────────────────────────┘
-                         (loop until all done)
+          │
+          │ spawns (for complex tasks)
+          ▼
+┌─────────────────────────────────────────────────────────────┐
+│                 RALPH Loop = More Claude Codes               │
+│                                                              │
+│  TASKS.md → Claude Code → STATUS.md → mark done → loop      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Why RALPH?
-- **Memory**: STATUS.md persists context between iterations
-- **Reliability**: Each task is atomic, can retry on failure
-- **Observability**: TASKS.md shows progress in real-time
-- **Composability**: Claude Code can spawn MORE Claude Codes for subtasks
+### How to Run FULLSEND
+
+```bash
+# Start FULLSEND with a request
+claude -p "$(cat <<EOF
+Read the experiment request in /app/requests/current.md
+Design the experiment, output spec to /app/experiments/
+If you need to build something complex, spawn a RALPH loop
+EOF
+)" --allowedTools "Edit,Bash,Write,Read,Glob,Grep" \
+   --dangerously-skip-permissions
+```
+
+Or triggered by Orchestrator writing to a request file and running the command.
+
+### Why This is Better
+- **Simpler**: No Python wrapper to maintain
+- **Direct**: Claude Code has all the tools it needs
+- **Composable**: Can spawn more Claude Codes via `./ralph.sh` or subprocess
+- **Hackathon-friendly**: Less code to write
 
 ---
 
@@ -78,18 +96,34 @@ Bold. Creative. Experimental. Commits fully to ideas. Learns fast from results. 
 
 ```
 services/fullsend/
-├── __init__.py
-├── main.py           # Entry point (listens for requests)
-├── config.py         # Pydantic settings
-├── spawner.py        # Claude Code subprocess spawner
-├── experiment.py     # Experiment spec generation
-├── skills/           # Built-in skills available to Claude Code
-│   ├── __init__.py
-│   ├── redis_tools.py    # Read/write Redis
-│   ├── file_tools.py     # Read/write files
-│   └── browserbase.py    # Web research
-└── prompts/
-    └── system.txt    # System prompt for Claude Code
+├── run.sh                # Launches Claude Code with system prompt
+├── prompts/
+│   └── system.txt        # System prompt for FULLSEND
+├── ralph.sh              # RALPH loop script (copy from RALPH/)
+├── requests/             # Incoming requests (written by Orchestrator)
+│   └── current.md        # Current experiment request
+├── experiments/          # Output experiment specs
+│   └── *.yaml            # Generated experiment YAML files
+└── status/               # RALPH-style status for FULLSEND's own work
+    ├── TASKS.md          # Current tasks
+    └── STATUS.md         # Memory/context
+```
+
+### run.sh (Entry Point)
+
+```bash
+#!/bin/bash
+# Launch FULLSEND (which IS Claude Code)
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SYSTEM_PROMPT=$(cat "$SCRIPT_DIR/prompts/system.txt")
+
+claude -p "$SYSTEM_PROMPT
+
+## Current Request
+$(cat "$SCRIPT_DIR/requests/current.md" 2>/dev/null || echo "No request pending")
+" --allowedTools "Edit,Bash,Write,Read,Glob,Grep" \
+  --dangerously-skip-permissions
 ```
 
 ---
@@ -127,219 +161,77 @@ CONTEXT_PATH=/app/context
 
 ## Core Logic
 
-### Main Loop (main.py)
+FULLSEND is Claude Code. It reads requests, does the work, outputs specs.
 
-```python
-async def main():
-    redis = Redis.from_url(REDIS_URL)
-    pubsub = redis.pubsub()
-    await pubsub.subscribe("fullsend:to_fullsend")
+### How It Works
 
-    async for message in pubsub.listen():
-        if message["type"] == "message":
-            data = json.loads(message["data"])
-            await handle_request(data)
+1. **Orchestrator** writes request to `services/fullsend/requests/current.md`
+2. **Orchestrator** runs `./services/fullsend/run.sh`
+3. **FULLSEND** (Claude Code) reads request, does research, designs experiment
+4. **FULLSEND** outputs YAML spec to `services/fullsend/experiments/`
+5. **FULLSEND** can spawn RALPH loops for complex multi-step work
 
-async def handle_request(request: dict):
-    """Handle an experiment request from Orchestrator."""
+### Spawning RALPH Loops (for complex tasks)
 
-    if request["type"] == "experiment_request":
-        await design_experiment(request)
-    elif request["type"] == "tool_feedback":
-        await handle_tool_feedback(request)
-    elif request["type"] == "run_direct":
-        await run_experiment_directly(request)
+FULLSEND can spawn RALPH loops by running `./ralph.sh` with a custom TASKS.md:
+
+```bash
+# Inside FULLSEND (Claude Code), to spawn a builder loop:
+
+# 1. Create work directory
+mkdir -p /tmp/fullsend_build_001
+
+# 2. Write TASKS.md
+cat > /tmp/fullsend_build_001/TASKS.md << 'EOF'
+# Tasks
+
+- [ ] TASK-001: Research GitHub API rate limits and auth
+- [ ] TASK-002: Write the stargazer scraper tool
+- [ ] TASK-003: Test with a small repo
+- [ ] TASK-004: Add error handling and retry logic
+- [ ] TASK-005: Output final tool to /app/tools/
+EOF
+
+# 3. Write STATUS.md (context)
+cat > /tmp/fullsend_build_001/STATUS.md << 'EOF'
+# Status (Memory)
+
+## Goal
+Build a GitHub stargazer scraper tool.
+
+## Requirements
+- Handle rate limiting
+- Extract emails from profiles
+- Return partial results on failure
+EOF
+
+# 4. Run RALPH loop
+cd /tmp/fullsend_build_001 && /app/RALPH/ralph.sh
 ```
 
-### RALPH Loop Spawner (spawner.py)
+### Direct Work (for simple tasks)
 
-```python
-import subprocess
-import tempfile
-from pathlib import Path
-import shutil
+For simple tasks, FULLSEND just does the work directly:
 
-class RalphLoop:
-    """RALPH-style task loop for Claude Code."""
+```bash
+# FULLSEND can use redis-cli directly
+redis-cli -u $REDIS_URL HSET experiments:exp_001 state ready
 
-    def __init__(self, work_dir: Path, max_iterations: int = 50):
-        self.work_dir = work_dir
-        self.max_iterations = max_iterations
-        self.tasks_file = work_dir / "TASKS.md"
-        self.status_file = work_dir / "STATUS.md"
+# FULLSEND can read/write files
+cat > experiments/exp_001.yaml << 'EOF'
+experiment:
+  id: exp_001
+  hypothesis: "CTOs who starred competitor repos are high-intent"
+  ...
+EOF
 
-    def setup(self, tasks: list[str], initial_context: str):
-        """Initialize TASKS.md and STATUS.md."""
-        self.work_dir.mkdir(parents=True, exist_ok=True)
-
-        # Write TASKS.md
-        tasks_content = "# Tasks\n\n"
-        for i, task in enumerate(tasks, 1):
-            tasks_content += f"- [ ] TASK-{i:03d}: {task}\n"
-        self.tasks_file.write_text(tasks_content)
-
-        # Write STATUS.md
-        self.status_file.write_text(f"# Status (Memory)\n\n{initial_context}\n\n## Log\n")
-
-    def get_next_task(self) -> str | None:
-        """Get next uncompleted task."""
-        content = self.tasks_file.read_text()
-        for line in content.split("\n"):
-            if line.startswith("- [ ] TASK-"):
-                return line.split(":")[0].replace("- [ ] ", "").strip()
-        return None
-
-    async def run(self) -> str:
-        """Run the RALPH loop until all tasks complete."""
-
-        for iteration in range(self.max_iterations):
-            task_id = self.get_next_task()
-
-            if not task_id:
-                # All done!
-                return self.status_file.read_text()
-
-            print(f"RALPH iteration {iteration + 1}: {task_id}")
-
-            prompt = f"""You are completing task {task_id} from TASKS.md.
-
-Read TASKS.md to find your task.
-Read STATUS.md for context from previous tasks (memory).
-
-Do the task. When done:
-1. Update STATUS.md with what you did
-2. Mark task done: change `- [ ] {task_id}:` to `- [x] {task_id}:` in TASKS.md
-3. Output: **TASK_DONE**"""
-
-            # Spawn Claude Code for this iteration
-            result = subprocess.run(
-                [
-                    "claude",
-                    "-p", prompt,
-                    "--allowedTools", "Edit,Bash,Write,Read,Glob,Grep",
-                    "--dangerously-skip-permissions"
-                ],
-                cwd=self.work_dir,
-                capture_output=True,
-                text=True,
-                timeout=300,
-                env={**os.environ, "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY}
-            )
-
-            if "TASK_DONE" not in result.stdout:
-                print(f"Warning: {task_id} may not have completed")
-
-            await asyncio.sleep(2)  # Brief pause between iterations
-
-        raise RuntimeError(f"Hit max iterations ({self.max_iterations})")
-
-async def spawn_ralph_loop(
-    tasks: list[str],
-    context: str,
-    work_dir: Path = None
-) -> str:
-    """Spawn a RALPH loop and return results."""
-
-    if work_dir is None:
-        work_dir = Path(tempfile.mkdtemp(prefix="fullsend_"))
-
-    try:
-        loop = RalphLoop(work_dir)
-        loop.setup(tasks, context)
-        return await loop.run()
-    finally:
-        # Cleanup temp dir (optional - might want to keep for debugging)
-        # shutil.rmtree(work_dir)
-        pass
+# FULLSEND can use browserbase for research
+# (via MCP or direct API calls)
 ```
 
-### Simple Spawn (for quick tasks)
+### The Prompt (prompts/system.txt)
 
-```python
-async def spawn_claude_code(
-    prompt: str,
-    working_dir: Path = Path("/app"),
-    timeout: int = 300
-) -> str:
-    """Spawn Claude Code for a single task (no loop)."""
-
-    result = subprocess.run(
-        [
-            "claude",
-            "-p", prompt,
-            "--allowedTools", "Edit,Bash,Write,Read,Glob,Grep",
-            "--dangerously-skip-permissions"
-        ],
-        cwd=working_dir,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        env={**os.environ, "ANTHROPIC_API_KEY": ANTHROPIC_API_KEY}
-    )
-
-    if result.returncode != 0:
-        raise RuntimeError(f"Claude Code failed: {result.stderr}")
-
-    return result.stdout
 ```
-
-### Experiment Design (experiment.py)
-
-```python
-async def design_experiment(request: dict):
-    """Design an experiment spec using RALPH loop."""
-
-    idea = request["idea"]
-    context = request.get("context", "")
-    available_tools = await get_available_tools()
-    recent_learnings = await get_tactical_learnings()
-
-    # Break experiment design into RALPH tasks
-    tasks = [
-        "Research the target audience and validate the idea is feasible",
-        "Check available tools and identify what's needed",
-        "Design the experiment spec with hypothesis and metrics",
-        "Write the outreach template (actual copy, not placeholders)",
-        "Define success/failure criteria and schedule",
-        "Output final experiment YAML to experiment_spec.yaml"
-    ]
-
-    initial_context = f"""## Experiment Request
-{idea}
-
-## Context from Orchestrator
-{context}
-
-## Available Tools
-{format_tools(available_tools)}
-
-## Recent Learnings
-{format_learnings(recent_learnings)}
-"""
-
-    # Run RALPH loop
-    work_dir = Path(f"/tmp/fullsend/exp_{int(time.time())}")
-    result = await spawn_ralph_loop(tasks, initial_context, work_dir)
-
-    # Read the generated experiment spec
-    spec_file = work_dir / "experiment_spec.yaml"
-    if spec_file.exists():
-        experiment_spec = yaml.safe_load(spec_file.read_text())
-    else:
-        raise RuntimeError("RALPH loop did not produce experiment spec")
-
-    # ... rest of processing
-```
-
-### Alternative: Single-Shot Design (for simple experiments)
-
-For simple experiments, skip RALPH and use direct spawn:
-
-```python
-async def design_simple_experiment(request: dict):
-    """Design a simple experiment without RALPH loop."""
-
-    prompt = f"""
 # Design an Experiment
 
 ## The Idea
@@ -654,59 +546,80 @@ def scrape_page(url: str) -> str:
 
 ## Acceptance Criteria
 
-- [ ] Connects to Redis on startup
-- [ ] Subscribes to `fullsend:to_fullsend`
-- [ ] Spawns Claude Code subprocess for experiment design
-- [ ] Generates complete experiment specs in YAML
-- [ ] Saves experiments to Redis (`experiments:{id}`)
-- [ ] Saves metrics specs to Redis (`metrics_specs:{id}`)
-- [ ] Publishes schedules for Executor
-- [ ] Requests new tools from Builder when needed
-- [ ] Notifies Orchestrator when experiments are ready
-- [ ] Can run simple experiments directly
-- [ ] Records tactical learnings to Redis
-- [ ] Handles Claude Code timeout gracefully
+- [ ] `run.sh` launches Claude Code with system prompt
+- [ ] Reads experiment request from `requests/current.md`
+- [ ] Generates complete experiment spec YAML
+- [ ] Outputs spec to `experiments/` directory
+- [ ] Can spawn RALPH loops for complex tasks
+- [ ] Can use redis-cli to read/write Redis
+- [ ] Writes tactical learnings to Redis
+- [ ] Outputs tool requests when needed (for Builder)
+- [ ] Experiment specs include real templates (not placeholders)
+- [ ] Works in Docker container with mounted volumes
 
 ---
 
 ## Test Plan
 
-### Unit Tests
+### Basic Test
 ```bash
-# Test YAML parsing
-python -m services.fullsend.experiment --test-parse
+# Write a test request
+cat > services/fullsend/requests/current.md << 'EOF'
+# Experiment Request
 
-# Test spawner
-python -m services.fullsend.spawner --test "echo 'hello'"
+## Idea
+Scrape GitHub stargazers of anthropic/claude and email CTOs
+
+## Context from Orchestrator
+- We have had success with developer-focused outreach
+- GitHub-based targeting has worked well before
+- We need the github_stargazer_scraper tool (request from Builder if missing)
+
+## Available Tools
+- resend_email: Send emails via Resend API
+- browserbase: Web scraping
+
+## Output
+Write experiment spec to experiments/exp_github_stars.yaml
+EOF
+
+# Run FULLSEND
+./services/fullsend/run.sh
+
+# Check output
+cat services/fullsend/experiments/exp_github_stars.yaml
 ```
 
-### Integration Test
+### RALPH Loop Test
 ```bash
-# Start FULLSEND
-python -m services.fullsend.main &
+# Test that FULLSEND can spawn RALPH loops
+# (include a complex request that requires multiple steps)
 
-# Send experiment request
-redis-cli PUBLISH fullsend:to_fullsend '{
-  "type": "experiment_request",
-  "idea": "Scrape GitHub stargazers of anthropic/claude and email CTOs",
-  "context": "We have had success with developer-focused outreach"
-}'
+cat > services/fullsend/requests/current.md << 'EOF'
+# Complex Request
 
-# Check for experiment in Redis (within 60 seconds)
-redis-cli HGETALL experiments:exp_*
+Build a complete lead gen pipeline:
+1. Scrape GitHub stargazers
+2. Enrich with LinkedIn data
+3. Filter for CTOs
+4. Send personalized emails
 
-# Check for tool request if needed
-redis-cli SUBSCRIBE fullsend:builder_requests
+This requires spawning a RALPH loop to build step by step.
+EOF
+
+./services/fullsend/run.sh
+
+# Check that RALPH loop was spawned and completed
+ls /tmp/fullsend_*/
 ```
 
-### Experiment Quality Test
-1. Send 3 different experiment ideas
-2. Verify each generates complete spec with:
-   - Specific target audience
-   - Real email template (not placeholders)
-   - Measurable metrics with thresholds
-   - Clear success/failure criteria
-   - Valid cron schedule
+### Quality Check
+Verify experiment specs include:
+- [ ] Specific target audience (not generic)
+- [ ] Real email template (actual copy, not placeholders)
+- [ ] Measurable metrics with thresholds
+- [ ] Clear success/failure criteria
+- [ ] Valid cron schedule
 
 ---
 
@@ -767,14 +680,13 @@ CMD ["python", "-m", "services.fullsend.main"]
 
 ## Notes for Builder
 
-- **RALPH loops are the core pattern** — FULLSEND spawns Claude Code in loops
-- TASKS.md = work to do, STATUS.md = memory between iterations
-- For complex experiments: use RALPH (multi-step, reliable)
-- For simple tasks: use direct spawn (single Claude Code call)
-- YAML parsing must be robust (Claude might output extra text)
+- **FULLSEND IS Claude Code** — not a Python wrapper
+- The "build" is just: system prompt + run.sh + folder structure
+- FULLSEND reads requests from `requests/current.md`
+- FULLSEND outputs specs to `experiments/*.yaml`
+- For complex multi-step work, FULLSEND spawns RALPH loops (more Claude Codes)
+- FULLSEND can use redis-cli, browserbase, file tools directly
 - Experiment IDs should be human-readable: `exp_20240115_github_stars`
-- Always validate experiment specs before saving
-- Tactical learnings go to Redis, not markdown files
 - **Include actual email templates** — no placeholders!
-- Claude Code can spawn MORE Claude Codes for subtasks (nested loops)
-- Keep work_dir around for debugging failed experiments
+- The system prompt is the main thing to get right
+- Test by running `./run.sh` with a sample request
