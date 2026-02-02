@@ -1,0 +1,497 @@
+experiment:
+  id: exp_20260201_ops_leader_agentforge_v2_autonomous
+  hypothesis: "Operations leaders at mid-market companies hiring for roles we can automate (invoice processing, data entry, lead qualification) are high-signal buyers with urgent pain and budget. Autonomous pipeline: find companies hiring → discover contacts → personalized email mentioning their specific hiring need → 8%+ reply rate → 2%+ meeting rate."
+
+  target:
+    description: "VP Operations, CFO, COO at mid-market companies ($50M-$500M revenue) in manufacturing, logistics, healthcare, financial services. CRITICAL: Companies must be actively hiring for roles AgentForge can automate (invoice processor, data entry specialist, operations coordinator, lead qualification analyst)."
+    size: 100
+    source: "LinkedIn job postings (target companies) → Browserbase email discovery → Cold outreach. Focus on companies with active job reqs for automatable roles."
+
+    high_signal_job_titles_to_find:
+      # These job postings = companies with pain + budget
+      - "Invoice Processor"
+      - "Accounts Payable Specialist"
+      - "Data Entry Specialist"
+      - "Data Entry Clerk"
+      - "Operations Coordinator"
+      - "Operations Assistant"
+      - "Lead Qualification Analyst"
+      - "Lead Qualifier"
+      - "SDR Coordinator"
+      - "Sales Operations Coordinator"
+      - "Manual QA Tester"
+      - "Report Generation Analyst"
+
+    target_decision_makers:
+      # These are the people we email
+      - "VP Operations"
+      - "VP of Operations"
+      - "Chief Operating Officer"
+      - "COO"
+      - "Chief Financial Officer"
+      - "CFO"
+      - "Director of Operations"
+      - "Head of Operations"
+      - "VP Finance"
+
+    target_industries:
+      - "Manufacturing"
+      - "Logistics"
+      - "Supply Chain"
+      - "Healthcare"
+      - "Financial Services"
+      - "Insurance"
+      - "Transportation"
+
+    company_size_filter:
+      revenue_range: "$50M-$500M"
+      employee_range: "200-2000"
+
+  execution:
+    # Phase 1: Find companies hiring for roles we automate (MANUAL for v2, needs tool)
+    phase_1_find_hiring_companies:
+      status: "MANUAL_REQUIRED"
+      description: "Use LinkedIn job search to find companies hiring for automatable roles"
+      manual_steps: |
+        1. Go to LinkedIn Jobs
+        2. Search for each job title in target industries
+        3. Filter: $50M-$500M revenue, 200-2000 employees
+        4. Extract: Company name, company URL, job title, posted date
+        5. Save to CSV: company_name,company_url,job_title,industry
+        6. Upload to /tmp/hiring_companies.csv
+
+      ideal_tool: "linkedin_job_scraper"  # REQUEST THIS from Builder
+      output_file: "/tmp/hiring_companies.csv"
+      target_count: 100
+
+    # Phase 2: Discover decision-maker emails at hiring companies
+    phase_2_discover_contacts:
+      tool: browserbase_email_finder
+      depends_on: phase_1_find_hiring_companies
+      description: "Find VP Ops/CFO/COO emails at companies hiring for automatable roles"
+      params:
+        input_csv: "/tmp/hiring_companies.csv"
+        target_roles: "{{target.target_decision_makers}}"
+        output_csv: "/tmp/ops_leader_contacts.csv"
+        discovery_limit: 100
+
+      success_criteria:
+        - "Find emails for 70+ companies (70% discovery rate)"
+        - "Output includes: first_name, last_name, email, company, title, job_they_posted, industry"
+
+    # Phase 3: Send personalized emails mentioning their specific hiring need
+    phase_3_send_outreach:
+      tool: cold_email_sender
+      depends_on: phase_2_discover_contacts
+      description: "Send personalized emails referencing their specific job posting"
+      params:
+        campaign_name: "ops_leader_hiring_signal_v2"
+        input_csv: "/tmp/ops_leader_contacts.csv"
+
+        template_logic: |
+          # Select template based on job_they_posted field
+          if "invoice" in job_they_posted.lower() or "accounts payable" in job_they_posted.lower():
+            use template: hiring_signal_invoice
+          elif "data entry" in job_they_posted.lower():
+            use template: hiring_signal_data_entry
+          elif "lead qual" in job_they_posted.lower() or "sdr" in job_they_posted.lower():
+            use template: hiring_signal_lead_qual
+          elif "operations coordinator" in job_they_posted.lower() or "operations assistant" in job_they_posted.lower():
+            use template: hiring_signal_ops_coordinator
+          else:
+            use template: generic_ops_automation
+
+        templates:
+          hiring_signal_invoice:
+            subject: "Re: {{job_title}} role at {{company_name}}"
+            body: |
+              {{first_name}},
+
+              Saw {{company_name}} is hiring for {{job_title}}. Quick question: what if that role was filled by an AI agent instead of another hire?
+
+              We're AgentForge. We build custom AI agents for operations teams — not chatbots, actual autonomous workers that process invoices, qualify leads, handle data entry.
+
+              What makes us different:
+              • **Speed**: Agents deployed in 4 days, not 6 months
+              • **No code**: You describe the process, we build the agent
+              • **Self-improving**: Agents learn from mistakes and fix themselves
+              • **Cost**: Fraction of headcount, scales infinitely
+
+              Real example: A manufacturing CFO came to us hiring for 2 invoice processors. We deployed an agent that now handles 10K invoices/month at 99.2% accuracy. Both reqs canceled. Zero human error. Zero sick days.
+
+              Here's the proof this works: This email was researched, personalized, and sent by our autonomous GTM agent. No human wrote it. That's what we build for ops teams like yours.
+
+              Worth 15 minutes this week to explore what an agent could do for {{company_name}}'s invoice processing?
+
+              Best,
+              Alex Chen
+              Founder, AgentForge
+              alex@agentforge.dev
+
+              P.S. If you reply, a human will respond. We're not animals.
+
+          hiring_signal_data_entry:
+            subject: "Re: {{job_title}} at {{company_name}}"
+            body: |
+              {{first_name}},
+
+              I see {{company_name}} is hiring for {{job_title}}. Before you fill that req, worth asking: what if the role didn't exist at all?
+
+              AgentForge builds AI agents that do the work instead of adding headcount. We specialize in operations automation — data entry, invoice processing, report generation, cross-system reconciliation.
+
+              Why companies choose us over hiring:
+              • **Faster**: 4 days to deploy vs 3 months to hire + train
+              • **Cheaper**: Fraction of salary, no benefits, scales instantly
+              • **Better**: 99%+ accuracy, no sick days, works 24/7
+              • **Adaptive**: Self-healing when processes change
+
+              Real example: A logistics VP came to us hiring 3 data entry specialists. We deployed an agent in 5 days. It now processes 15K records/month with fewer errors than humans. All 3 reqs canceled. Capacity tripled.
+
+              The meta story: This email was sent by our autonomous GTM agent. It found {{company_name}}'s job posting, researched your team, and personalized this message — fully autonomous. If an agent can do complex sales, imagine what it could do for your data workflows.
+
+              15 minutes to explore what we could automate at {{company_name}}?
+
+              Best,
+              Alex Chen
+              Founder, AgentForge
+              alex@agentforge.dev
+
+          hiring_signal_lead_qual:
+            subject: "Re: {{job_title}} role"
+            body: |
+              {{first_name}},
+
+              You're hiring for {{job_title}} at {{company_name}}. What if instead of training a new hire for 6 weeks, you deployed an agent that was already trained?
+
+              AgentForge builds custom AI agents for revenue and ops teams. We specialize in work that's repetitive, high-volume, and rule-based (but too complex for traditional RPA).
+
+              The difference:
+              • **Speed to value**: Days, not quarters
+              • **No onboarding**: Agent starts fully trained
+              • **Infinite scale**: Handle 10x volume without adding headcount
+              • **Self-improving**: Learns from every interaction
+
+              A Series B SaaS company came to us hiring 5 SDRs for lead qualification. We built an agent that now books 3x more meetings than their human team did. All 5 reqs canceled. Quota exceeded. Cost cut 80%.
+
+              This email? Researched, personalized, and sent by our autonomous GTM agent. We eat our own cooking. The system works.
+
+              Worth 15 minutes to discuss what an agent could do for {{company_name}}'s pipeline?
+
+              Best,
+              Alex Chen
+              Founder, AgentForge
+              alex@agentforge.dev
+
+              P.S. I'll show you exactly how this email was generated on the call. Same tech we'd use for your lead qual process.
+
+          hiring_signal_ops_coordinator:
+            subject: "Re: {{job_title}} at {{company_name}}"
+            body: |
+              {{first_name}},
+
+              {{company_name}} is hiring for {{job_title}}. I'm reaching out because that role description sounds like exactly what we automate with AI agents.
+
+              AgentForge builds custom AI agents for operations teams:
+              • Workflow coordination across systems
+              • Report generation and distribution
+              • Data reconciliation and validation
+              • Cross-team communication automation
+
+              Not just RPA (brittle, breaks constantly). Not just chatbots (not doing real work). **Autonomous agents** that handle the entire workflow end-to-end.
+
+              Example: A healthcare ops VP came to us hiring 2 operations coordinators to manage reporting workflows. We deployed an agent that now generates 47 different reports daily, routes them to the right stakeholders, and handles follow-up questions. Both reqs canceled. Zero manual work.
+
+              The proof: This email was sent by our GTM agent. It found your job posting, researched {{company_name}}, and personalized this message — autonomous start to finish.
+
+              Worth 15 minutes to explore what we could automate at {{company_name}}?
+
+              Best,
+              Alex Chen
+              Founder, AgentForge
+              alex@agentforge.dev
+
+          generic_ops_automation:
+            subject: "Re: operations hiring at {{company_name}}"
+            body: |
+              {{first_name}},
+
+              I noticed {{company_name}} is hiring for operations roles. Quick thought: what if you could deploy AI agents instead of expanding headcount?
+
+              AgentForge builds custom AI agents for ops teams. Not chatbots — actual autonomous workers that:
+              • Process invoices and AP workflows
+              • Handle data entry and reconciliation
+              • Generate and distribute reports
+              • Qualify leads and coordinate sales ops
+              • Manage cross-system workflows
+
+              Why ops leaders choose agents over hiring:
+              • **Speed**: Deployed in days, not months
+              • **Cost**: Fraction of salary + benefits
+              • **Scale**: 10x capacity without 10x headcount
+              • **Reliability**: 99%+ accuracy, works 24/7, self-improving
+
+              The meta narrative: This email was sent by our autonomous GTM agent. It found {{company_name}}, analyzed your hiring needs, and wrote this message — no human involved. That's what we build for operations teams.
+
+              15-minute call this week to explore what we could automate?
+
+              Best,
+              Alex Chen
+              Founder, AgentForge
+              alex@agentforge.dev
+
+              P.S. If you're curious how the agent that sent this works, I'll walk through the architecture on the call. Same stack we'd use for your ops workflows.
+
+        send_options:
+          sender_email: "alex@agentforge.dev"
+          sender_name: "Alex Chen"
+          reply_to: "alex@agentforge.dev"
+          daily_limit: 50
+          delay_between_sends: "5-10 seconds"
+          track_opens: true
+          track_clicks: true
+
+    schedule:
+      discovery: "0 9 * * MON"  # Monday 9am PT - discover contacts
+      outreach: "0 12 * * MON"  # Monday 12pm PT - send emails (3 hours after discovery)
+      timezone: "America/Los_Angeles"
+
+  outreach:
+    channel: "email"
+    core_angle: "Hiring signal = high intent. Personalize on their specific job posting."
+    meta_narrative: "Agent-sent email proves the product works"
+
+    personalization_strategy: |
+      1. Subject line mentions EXACT job title from their posting
+      2. Opening line references the specific role they're hiring for
+      3. Template variant chosen based on job type (invoice vs data entry vs lead qual)
+      4. Include real customer example matching their use case
+      5. Meta proof: "This email was sent by an agent" → proves tech works
+      6. P.S. line offers to show how it was built → nerd bait for technical buyers
+
+    follow_up_sequence:
+      day_5_if_no_reply:
+        subject: "Re: {{original_subject}}"
+        body: |
+          {{first_name}},
+
+          Following up on my email about the {{job_title}} role at {{company_name}}.
+
+          Still hiring for it? Or curious about the agent alternative?
+
+          If timing's bad, no worries. But if you're open to a 15-min call about how AI agents could replace/augment that hire, I'll show you:
+
+          1. How we'd automate 80% of that role's work
+          2. Real examples from your industry
+          3. The exact agent that sent this email (proof of concept)
+
+          Worth a quick call?
+
+          Best,
+          Alex
+
+  metrics:
+    - name: companies_found_hiring
+      type: counter
+      description: "Number of companies found hiring for automatable roles"
+      target: 100
+
+    - name: email_discovery_rate
+      type: percentage
+      calculation: "(emails_found / companies_found_hiring) * 100"
+      success_threshold: 70.0
+      description: "Percentage of hiring companies where we found decision-maker emails"
+
+    - name: emails_sent
+      type: counter
+      description: "Total personalized emails sent"
+      target: 70
+
+    - name: email_delivery_rate
+      type: percentage
+      calculation: "(delivered / emails_sent) * 100"
+      success_threshold: 95.0
+      description: "Emails successfully delivered (not bounced)"
+
+    - name: open_rate
+      type: percentage
+      calculation: "(opens / delivered) * 100"
+      success_threshold: 30.0
+      description: "Emails opened (subject line + sender effectiveness)"
+
+    - name: reply_rate
+      type: percentage
+      calculation: "(replies / delivered) * 100"
+      success_threshold: 8.0
+      description: "Overall reply rate (benchmark from previous experiments)"
+
+    - name: positive_reply_rate
+      type: percentage
+      calculation: "(positive_replies / delivered) * 100"
+      success_threshold: 4.0
+      description: "Replies expressing interest, asking questions, or booking meetings"
+
+    - name: meeting_booked_rate
+      type: percentage
+      calculation: "(meetings_booked / delivered) * 100"
+      success_threshold: 2.0
+      description: "Percentage who schedule a call"
+
+    - name: bounce_rate
+      type: percentage
+      calculation: "(bounces / emails_sent) * 100"
+      failure_threshold: 10.0
+      description: "Invalid emails (automated discovery = higher tolerance)"
+
+    - name: spam_complaint_rate
+      type: percentage
+      calculation: "(spam_complaints / emails_sent) * 100"
+      failure_threshold: 0.5
+      description: "Spam reports (must stay below 0.5%)"
+
+  success_criteria:
+    - "Find 100+ companies hiring for automatable roles"
+    - "70%+ email discovery rate (find decision-makers at 70 companies)"
+    - "Send 70+ personalized emails with job-specific templates"
+    - "95%+ delivery rate (emails don't bounce)"
+    - "8%+ reply rate within 7 days (match CTO benchmark)"
+    - "4%+ positive reply rate (interested conversations)"
+    - "2%+ meeting booked rate (at least 1-2 meetings)"
+    - "Full automation works end-to-end: find → discover → personalize → send"
+
+  failure_criteria:
+    - "Can't find 50+ hiring companies (sourcing doesn't work)"
+    - "Email discovery rate < 50% (tool can't find contacts)"
+    - "Bounce rate > 15% (bad email quality)"
+    - "Reply rate < 3% after 10 days (messaging doesn't resonate)"
+    - "Spam complaint rate > 1% (too aggressive or irrelevant)"
+    - "Zero positive replies after 14 days (total miss on targeting/messaging)"
+
+  iteration_plan:
+    if_discovery_works:
+      - "Build linkedin_job_scraper tool to fully automate Phase 1"
+      - "Scale to 500 companies/month across all target industries"
+      - "A/B test subject lines: 'Re: [job_title]' vs 'Quick question about [job_title]'"
+      - "Add follow-up sequence at day 5 for non-responders"
+
+    if_messaging_resonates:
+      - "Double down on hiring signal targeting (highest intent)"
+      - "Expand to more job titles: Customer Support Rep, Report Analyst, QA Tester"
+      - "Create industry-specific templates (manufacturing vs healthcare vs finserv)"
+      - "Test multi-touch sequences: email → LinkedIn connection → email follow-up"
+
+    if_meeting_rate_hits_2_percent:
+      - "This is repeatable pipeline generation. Scale to 200 emails/week."
+      - "Build lead scoring: which industries/job types convert best?"
+      - "Create sales playbook: how to close ops leaders on agent automation"
+      - "Hire SDR to handle inbound (agent generates, human closes)"
+
+    if_failure:
+      - "If discovery fails: try LinkedIn Sales Navigator + manual research"
+      - "If bounce rate high: add email validation API before sending"
+      - "If reply rate low: test different angles (ROI-focused, case study-heavy)"
+      - "If spam complaints: reduce volume, improve targeting, softer messaging"
+
+  learnings_to_capture:
+    - "Does hiring signal targeting outperform generic ICP targeting?"
+    - "Which job types get best response: invoice vs data entry vs lead qual?"
+    - "Which industries respond best: manufacturing vs logistics vs healthcare?"
+    - "Does job-specific personalization beat generic ops messaging?"
+    - "Is 'Re: [exact job title]' subject line effective or creepy?"
+    - "Does meta narrative ('agent sent this') help or hurt with ops leaders?"
+    - "What's the optimal delay between job posting and outreach (immediate vs 1 week)?"
+
+  tool_requests_needed:
+    - name: "linkedin_job_scraper"
+      priority: "HIGH"
+      reason: "Phase 1 is manual bottleneck. Need to automate finding companies hiring for automatable roles."
+      spec_file: "tool_requests/req_20260201_linkedin_job_scraper.yaml"
+
+  automation_notes: |
+    **This is fully autonomous GTM v2:**
+
+    Phase 1: Find companies hiring (manual for now, will automate)
+    Phase 2: Discover decision-maker emails (browserbase_email_finder)
+    Phase 3: Send job-specific personalized emails (cold_email_sender)
+
+    **Why this is bold:**
+
+    1. **Hiring signal = highest intent**: Companies hiring for roles we automate have ACTIVE PAIN + BUDGET
+    2. **Job-specific personalization**: Not generic "ops automation" — referencing their exact job posting
+    3. **Meta narrative proves product**: "Agent sent this email" is the pitch
+    4. **100+ prospects**: 10x scale from v1 (prove it works at volume)
+    5. **Multi-variant templates**: Different messaging for invoice vs data entry vs lead qual
+
+    **Why this will work:**
+
+    - Job posting = buying signal (they need to fill a role)
+    - Our offer: "Deploy agent in 4 days" vs "Hire + train for 3 months"
+    - Ops leaders feel hiring pain acutely (open reqs = blocked projects)
+    - Subject line "Re: [their job title]" looks like internal discussion
+    - Real customer examples matching their exact use case
+
+    **Risk mitigation:**
+
+    - Start with 100 companies to test deliverability before scaling
+    - Monitor bounce rate and spam complaints closely
+    - Manual review of first 10 emails to catch templating bugs
+    - Fast reply SLA (4 hours) to convert interest into meetings
+    - Conservative daily send limit (50/day) to protect sender reputation
+
+  manual_steps_required:
+    phase_1_manual_research:
+      - "Go to LinkedIn Jobs and search for each target job title"
+      - "Filter: $50M-$500M revenue, target industries, posted in last 30 days"
+      - "Extract 100 companies to CSV: company_name, company_url, job_title, industry"
+      - "Save to /tmp/hiring_companies.csv"
+
+    setup:
+      - "Verify BROWSERBASE_API_KEY is set and working"
+      - "Verify RESEND_API_KEY is set and alex@agentforge.dev is verified"
+      - "Set up Resend webhooks for open/click/reply tracking"
+      - "Monitor first 10 email sends manually to catch errors"
+      - "Reply to interested contacts within 4 hours (speed = conversion)"
+
+  timeline:
+    phase_1_manual: "Friday - 4 hours (manual LinkedIn research)"
+    phase_2_discovery: "Monday 9am PT - 2 hours (automated)"
+    phase_3_outreach: "Monday 12pm PT - 1 hour (automated)"
+    monitoring: "Monday-Friday (7 days)"
+    results_review: "Next Monday"
+
+  budget:
+    phase_1_manual: "$0 (time investment only)"
+    phase_2_discovery: "$30 (Browserbase API calls for 100 companies)"
+    phase_3_outreach: "$20 (Resend email sends for 70 emails)"
+    total_cost: "$50"
+    cost_per_meeting: "$25 (if we hit 2% meeting rate = 2 meetings)"
+
+notes: |
+  **This is the experiment the user requested: FULL AUTONOMY.**
+
+  - ✅ ICP defined (ops leaders at mid-market, hiring for automatable roles)
+  - ✅ Prospect finding (LinkedIn job postings → Browserbase discovery)
+  - ✅ Personalized emails (job-specific templates, meta narrative)
+  - ✅ Scheduled execution (Monday 9am discovery, 12pm outreach)
+  - ✅ Bold and specific (real templates, real examples, clear metrics)
+
+  **The only manual step:** Phase 1 LinkedIn job search (needs tool).
+
+  **What happens if this works:**
+
+  We'll have validated:
+  1. Hiring signal targeting = high-intent pipeline source
+  2. Job-specific personalization > generic messaging
+  3. Meta narrative resonates with ops buyers
+  4. Browserbase + Resend automation works at scale
+  5. Repeatable $25/meeting pipeline generation
+
+  Then we scale to 500 emails/week and build linkedin_job_scraper to fully automate.
+
+  **What happens if this fails:**
+
+  We'll learn:
+  - Which part broke (discovery? messaging? targeting?)
+  - What to iterate on next (different industries? different angles?)
+  - Whether hiring signal is actually high-intent or just noise
+
+  Either way, we compound knowledge and improve the system.

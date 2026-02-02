@@ -1,32 +1,33 @@
 prd:
-  tool_name: email_sender
-  purpose: Send personalized cold outreach emails to prospects identified by other
-    tools. Must support templating with personalization variables (name, company,
-    repo_starred, etc.) and track delivery status.
+  name: job_posting_finder
+  purpose: Find mid-market companies actively hiring for roles that AgentForge can
+    automate (invoice processing, data entry, lead qualification, customer support).
+    These hiring signals indicate budget, pain, and urgency - making them high-intent
+    prospects.
   inputs:
-    to_email: string - recipient email address
-    to_name: string - recipient name for personalization
-    subject: string - email subject line (supports {{variables}})
-    body_template: string - email body with {{variable}} placeholders
-    personalization: object - key/value pairs to substitute into template
-    from_name: string - sender display name
-    reply_to: string - reply-to address (optional)
+    role_keywords: List of job titles/keywords to search for (e.g., 'data entry clerk',
+      'invoice processor', 'accounts payable specialist', 'lead qualifier', 'SDR')
+    company_size: Target company size filter (employee count range, e.g., 200-2000
+      for mid-market)
+    max_results: Number of companies to return
+    location: Optional geographic filter
   outputs:
-    success: boolean - whether email was sent
-    message_id: string - unique identifier for tracking
-    error: string - error message if failed
-  requirements:
-  - Use a reliable transactional email service (Resend, SendGrid, or Postmark)
-  - Support rate limiting to avoid spam flags
-  - Log all sends for experiment tracking
-  - Handle bounces gracefully
+    companies:
+    - company_name: Name of the company
+      company_domain: Company website domain
+      employee_count: Estimated employee count
+      industry: Company industry
+      job_title: The specific role they're hiring for
+      job_posting_url: Link to the job posting
+      posting_date: When the job was posted
+  implementation_notes: Could use LinkedIn Jobs API, Indeed API, or scrape job boards
+    via Browserbase. Focus on recency (jobs posted in last 30 days) and signal quality.
+    Mid-market = roughly 200-2000 employees.
   _meta:
     requested_by: orchestrator
     priority: high
-    received_at: '2026-02-01T20:00:48.023070+00:00'
-    orchestrator_reasoning: FULLSEND completed experiment design for CTO competitor-repo
-      targeting, but it's blocked pending an email_sender tool which doesn't exist
-      yet. The experiment is ready to execute but can't without email capability.
-      This is the critical path blocker - we have the strategy (github_stargazer_scraper
-      to find CTOs) but no way to reach them. Building email_sender unblocks this
-      experiment and will be reusable for all future outreach experiments.
+    received_at: '2026-02-01T22:06:54.592773+00:00'
+    orchestrator_reasoning: Experiment is well-designed and strategically aligned,
+      but requires a job posting finder tool to identify companies hiring for automatable
+      roles. This is the core targeting mechanism that makes the campaign high-signal.
+      Once built, we can run the full autonomous pipeline.

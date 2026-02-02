@@ -90,15 +90,33 @@ class Dispatcher:
         - priority: low/medium/high/urgent
         - requested_at: ISO timestamp
         - orchestrator_reasoning: Why the Orchestrator needs this tool
+        - notify_channel: Discord channel to notify on completion (optional)
+        - notify_message: Message to send on completion (optional)
         """
+        # Extract actual PRD - handle case where payload already has 'prd' key (avoid double-nesting)
+        if isinstance(decision.payload, dict) and "prd" in decision.payload:
+            actual_prd = decision.payload["prd"]
+            notify_channel = decision.payload.get("notify_channel")
+            notify_message = decision.payload.get("notify_message")
+        else:
+            actual_prd = decision.payload
+            notify_channel = None
+            notify_message = None
+
         payload = {
             "type": "tool_prd",
-            "prd": decision.payload,
+            "prd": actual_prd,
             "requested_by": "orchestrator",
             "priority": decision.priority,
             "requested_at": datetime.now(UTC).isoformat(),
             "orchestrator_reasoning": decision.reasoning,
         }
+        # Include notification info if present
+        if notify_channel:
+            payload["notify_channel"] = notify_channel
+        if notify_message:
+            payload["notify_message"] = notify_message
+
         await self.redis.publish(
             self.settings.channel_builder_tasks,
             json.dumps(payload),
@@ -107,12 +125,13 @@ class Dispatcher:
             "orchestrator.dispatch_builder",
             {
                 "priority": decision.priority,
-                "prd_preview": str(decision.payload)[:120],
+                "prd_preview": str(actual_prd)[:120],
+                "tool_name": actual_prd.get("name") if isinstance(actual_prd, dict) else "unknown",
             },
         )
         logger.info(
             f"Dispatched tool PRD to Builder: "
-            f"priority={decision.priority}, prd={decision.payload}"
+            f"priority={decision.priority}, tool={actual_prd.get('name') if isinstance(actual_prd, dict) else 'unknown'}"
         )
 
     async def respond_to_discord(
@@ -128,13 +147,26 @@ class Dispatcher:
         - priority: For message queue ordering
         """
         resolved_original = original_msg.get("original_message", original_msg)
-        channel_id = resolved_original.get("channel_id") or original_msg.get("channel_id")
+        # Try multiple sources for channel_id (including notify_channel from builder flow)
+        channel_id = (
+            resolved_original.get("channel_id")
+            or original_msg.get("channel_id")
+            or original_msg.get("notify_channel")
+            or decision.payload.get("channel_id")
+            or decision.payload.get("notify_channel")
+        )
         reply_to = resolved_original.get("message_id") or original_msg.get("message_id")
         response_content = (
             decision.payload.get("content")
             or decision.payload.get("message")
+            or original_msg.get("notify_message")
             or "✅ Got it — I will draft a plan and share next steps shortly."
         )
+        
+        if not channel_id:
+            logger.warning(f"No channel_id found for Discord response, skipping. Original msg keys: {list(original_msg.keys())}")
+            return
+            
         payload = {
             "type": "orchestrator_response",
             "channel_id": channel_id,
@@ -283,18 +315,20 @@ class Dispatcher:
         Returns:
             Parsed JSON output from Roundtable with transcript and summary
         """
-        env = {
-            "ROUNDTABLE_MAX_ROUNDS": str(self.settings.roundtable_max_rounds),
-        }
+        import os as _os
+
+        # Start with current environment (for API keys etc)
+        env = _os.environ.copy()
+        env["ROUNDTABLE_MAX_ROUNDS"] = str(self.settings.roundtable_max_rounds)
 
         try:
             result = subprocess.run(
-                ["python", "-m", "services.roundtable.main"],
+                ["uv", "run", "python", "-m", "services.roundtable"],
                 input=input_json,
                 capture_output=True,
                 text=True,
                 timeout=self.settings.roundtable_timeout_seconds,
-                env={**env},
+                env=env,
             )
 
             if result.returncode != 0:

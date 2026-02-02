@@ -1,0 +1,238 @@
+experiment:
+  id: exp_20260201_hiring_signal_agentforge
+  hypothesis: "Companies actively hiring for automatable roles (Data Entry, Invoice Processing, Manual QA, etc.) are high-intent prospects. They have ACTIVE PAIN + ACTIVE BUDGET. Reaching ops leaders with 'Deploy an AI agent instead of hiring' messaging will yield 10%+ reply rate."
+
+  target:
+    description: "Mid-market companies (200-2000 employees) with active job postings for automatable back-office roles in the past 30 days"
+    size: 100
+    source: "LinkedIn Jobs via job_posting_finder → company discovery → browserbase_email_finder for ops leaders"
+    ideal_profile:
+      - "Companies posting: Data Entry Clerk, Invoice Processor, Document Processor, Manual QA Tester, Claims Processor, Order Entry Specialist"
+      - "200-2000 employees (mid-market sweet spot)"
+      - "Recent postings (past 30 days = active hiring)"
+      - "US-based or remote roles"
+
+  execution:
+    tool: multi_phase_pipeline
+    phases:
+      - phase: 1_discover_companies
+        description: "Find 100 companies hiring for automatable roles"
+        tool: job_posting_finder
+        params:
+          role_keywords:
+            - "Data Entry Clerk"
+            - "Data Entry Specialist"
+            - "Invoice Processor"
+            - "Accounts Payable Clerk"
+            - "Document Processing Specialist"
+            - "Manual QA Tester"
+            - "QA Analyst"
+            - "Claims Processor"
+            - "Insurance Claims Specialist"
+            - "Order Entry Specialist"
+            - "Customer Service Data Entry"
+            - "Administrative Assistant Data Entry"
+          company_size: "200-2000"
+          max_results: 100
+          location: "United States"
+        output: companies_hiring.json
+
+      - phase: 2_find_decision_makers
+        description: "Find VP Ops, COO, CFO, or Operations Director contacts at each company"
+        tool: browserbase_email_finder
+        input_from: phase_1.companies_hiring.json
+        params:
+          company_name: "{{company_name}}"
+          company_url: "{{company_domain}}"
+          target_role: "VP Operations|COO|CFO|Director of Operations|Head of Operations"
+        batch_size: 10
+        output: ops_leader_contacts.json
+
+      - phase: 3_send_personalized_outreach
+        description: "Send job-specific cold emails"
+        tool: cold_email_sender
+        input_from: phase_2.ops_leader_contacts.json
+        params:
+          recipients: "{{contacts}}"
+          template:
+            subject: "Re: {{job_title}} posting"
+            body: |
+              Hi {{first_name}},
+
+              I saw you're hiring for a {{job_title}} at {{company}}.
+
+              What if instead of hiring and onboarding for 6-8 weeks, you could deploy an AI agent that starts Monday?
+
+              AgentForge builds custom AI agents for back-office work:
+              → Same output as a human hire (processes invoices, extracts data, validates forms)
+              → Fraction of the cost ($2K/month vs $45K+ salary + benefits)
+              → Zero ramp time (live in 48 hours)
+              → Scales instantly (need 3 more? Deploy 3 more)
+
+              We've built agents for invoice processing, data entry, document review, and claims processing. Companies use us to either:
+              1. Fill the role without hiring
+              2. Free up their team for higher-value work
+
+              Worth a 15-min call this week to see if this could work for {{company}}?
+
+              Best,
+              Alex Chen
+              AgentForge
+              alex@agentforge.ai
+
+              P.S. This email was sent by an AI agent. That's how confident we are in the tech.
+          campaign_name: "hiring_signal_ops_leader_agentforge"
+          send_options:
+            sender_name: "Alex Chen"
+            sender_email: "alex@fullsendgtm.com"
+            daily_limit: 50
+            delay_seconds: 2
+        output: email_send_results.json
+
+    schedule: "0 9 * * MON"  # Every Monday at 9 AM PT
+    timezone: "America/Los_Angeles"
+
+  outreach:
+    channel: "email"
+    messaging_angle: "You're hiring for [specific job]. Deploy an AI agent instead. Same output, fraction of cost, starts Monday."
+    personalization_variables:
+      - job_title: "Exact job title from posting (e.g., 'Invoice Processor', 'Data Entry Clerk')"
+      - company: "Company name from job posting"
+      - first_name: "Ops leader first name from browserbase discovery"
+    template_strategy: "Job-specific personalization in subject line ('Re: Invoice Processor posting') creates context and relevance. Body focuses on speed-to-value (48 hours vs 6-8 weeks) and cost comparison (fraction of salary). Meta narrative at end (email sent by agent) demonstrates product credibility."
+
+  metrics:
+    - name: companies_discovered
+      type: counter
+      success_threshold: 100
+      description: "Total companies found with relevant job postings"
+
+    - name: email_discovery_rate
+      type: percentage
+      success_threshold: 70
+      description: "% of companies where we found ops leader emails"
+
+    - name: emails_sent
+      type: counter
+      success_threshold: 70
+      description: "Total emails sent (70% of 100 companies = 70 sent)"
+
+    - name: email_deliverability
+      type: percentage
+      success_threshold: 95
+      description: "% of emails that didn't bounce"
+
+    - name: open_rate
+      type: percentage
+      success_threshold: 35
+      description: "% of recipients who opened the email"
+
+    - name: reply_rate
+      type: percentage
+      success_threshold: 10
+      description: "% of recipients who replied (10%+ = strong signal)"
+
+    - name: positive_reply_rate
+      type: percentage
+      success_threshold: 5
+      description: "% of recipients with positive/interested replies"
+
+    - name: meeting_booked_rate
+      type: percentage
+      success_threshold: 3
+      description: "% of recipients who booked a call (3 meetings from 70 emails = win)"
+
+  success_criteria:
+    - "Find 100+ companies hiring for automatable roles"
+    - "Achieve 70%+ email discovery rate (find ops leaders at 70+ companies)"
+    - "Send 70+ personalized emails"
+    - "Get 10%+ reply rate (7+ replies)"
+    - "Book 3+ meetings"
+    - "Hypothesis: Reply rate 2x higher than previous CTO experiments (10% vs 5%)"
+
+  failure_criteria:
+    - "Email discovery rate < 50% (can't find decision makers)"
+    - "Deliverability < 90% (domain reputation issues)"
+    - "Reply rate < 5% (worse than CTO baseline)"
+    - "Zero meeting bookings from 70 emails"
+
+  learning_questions:
+    - "Does hiring signal = higher intent than GitHub stars or competitor usage?"
+    - "Which automatable roles have highest reply rates? (data entry vs invoice vs QA)"
+    - "Do ops leaders respond better than CTOs? (10% vs 5% baseline)"
+    - "Does job-specific subject line ('Re: Invoice Processor posting') outperform generic?"
+    - "What's the objection rate? (already filled, not interested, too expensive)"
+
+  follow_up_strategy:
+    - day_5_non_responders:
+        template: |
+          Hi {{first_name}},
+
+          Following up on my note about the {{job_title}} role.
+
+          Quick question: Did you end up filling the position, or still interviewing candidates?
+
+          If you're still looking, I'd love to show you how AgentForge could solve this faster (and cheaper) than a traditional hire.
+
+          15 minutes this week?
+
+          Best,
+          Alex
+    - day_10_non_responders:
+        template: |
+          {{first_name}},
+
+          Last note on this: If the {{job_title}} role is still open (or if you have other back-office positions), we can get you an AI agent running by Friday.
+
+          Worth exploring?
+
+          Alex
+
+  notification:
+    on_completion:
+      channel: ops
+      message: "Hiring signal experiment complete. {{emails_sent}} emails sent, {{reply_rate}}% reply rate, {{meeting_booked_rate}}% meeting rate."
+    on_milestone:
+      - trigger: "reply_rate >= 10"
+        channel: ops
+        message: "🎯 Hiring signal experiment hit 10%+ reply rate! High-intent hypothesis validated."
+    on_failure:
+      channel: ops
+      message: "Hiring signal experiment failed: {{failure_reason}}"
+
+  expected_outcomes:
+    optimistic: "15% reply rate (10+ replies), 5+ meetings booked. Hiring = highest intent signal we've tested."
+    realistic: "10% reply rate (7 replies), 3 meetings booked. Validates hypothesis that active hiring = strong buying signal."
+    pessimistic: "5% reply rate (same as CTO baseline). Hypothesis rejected — hiring signal doesn't translate to higher engagement."
+
+  cost_estimate:
+    browserbase_sessions: "$0.20/session × 100 companies = $20"
+    resend_emails: "$0.001/email × 70 emails = $0.07"
+    total: "$20.07 per run"
+    cost_per_meeting: "$6.69 (if 3 meetings booked)"
+
+  notes: |
+    This experiment tests the core hypothesis: companies hiring = high intent.
+
+    Key innovations:
+    1. **Intent Signal** — Job posting = explicit pain + active budget
+    2. **Job-Specific Personalization** — Subject line references exact role ("Re: Invoice Processor posting")
+    3. **Speed-to-Value Messaging** — 48 hours vs 6-8 weeks hiring timeline
+    4. **Cost Comparison** — $2K/month vs $45K+ salary
+    5. **Meta Narrative** — "This email was sent by an AI agent" = product proof
+
+    Why this should outperform CTO experiments (5% reply baseline):
+    - CTOs get cold emails constantly. Ops leaders get fewer.
+    - CTOs evaluate tech. Ops leaders solve immediate pain.
+    - GitHub stars = passive interest. Job postings = active need.
+    - "Replace your hire" is more urgent than "improve your workflow"
+
+    If reply rate hits 10%+, this becomes our primary channel.
+    If it hits 15%+, we scale to 500 companies/week.
+
+    Next iterations if successful:
+    - Test different automatable roles (which converts best?)
+    - Test timing (contact them day 1 vs day 14 of posting?)
+    - Test messaging variants (cost savings vs speed vs quality)
+    - Add LinkedIn outreach as second touchpoint
+    - Build job posting monitor (alert us when new roles posted)

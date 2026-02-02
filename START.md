@@ -14,16 +14,32 @@ comes from:
 - Context docs in `context/` (product, worklist, learnings)
 
 ## Where to edit "what it is working on"
-Start here:
-- `context/product_context.md` for product description, target users, value prop
-- `context/worklist.md` for prioritized work items
-- `context/learnings.md` for accumulated knowledge
-- `services/fullsend/requests/current.md` for the current Orchestrator request
 
-Behavioral prompts:
-- `services/orchestrator/prompts/` for decision-making style
-- `services/watcher/prompts/` for classification and response
-- `services/redis_agent/prompts/` for summaries and analysis
+### Product Context (Start Here!)
+Edit `context/product_context.md` to define:
+- **What you're selling** — product/service description
+- **Target audience** — ideal customer profile, buyer personas
+- **Value proposition** — the core problem you solve
+- **Key differentiators** — what makes you different
+- **GTM implications** — channels, messaging angles, high-signal targets
+
+This is the seed for all GTM experiments. The richer the context, the better the ideas.
+
+### Other Context Files
+- `context/worklist.md` — prioritized work items (Orchestrator-managed)
+- `context/learnings.md` — accumulated strategic insights (Orchestrator-managed)
+- `services/fullsend/requests/current.md` — current experiment request
+
+### Behavioral Prompts
+- `services/orchestrator/prompts/` — decision-making style
+- `services/watcher/prompts/` — classification and response
+- `services/redis_agent/prompts/` — summaries and analysis
+
+## Documentation
+- `SYSTEM_COMPONENTS.md` — complete component guide with Redis wiring
+- `VISION.md` — the core concept and architecture
+- `CLAUDE.md` — commands and conventions for this repo
+- `docs/status/` — status files for each component
 
 ## Prereqs
 - Python 3.11+
@@ -115,23 +131,41 @@ Builder Listener (bridges Redis → Claude Code):
 uv run python -m services.builder.listener
 ```
 
-Optional: Roundtable ideation:
-```
-./run_roundtable.sh "Topic: Next GTM channel experiments"
-```
-
 ## One-command launch (script)
-Use the launcher to start all core services (including listeners).
+Use the launcher to start all core services (including listeners and dashboard).
 ```
 chmod +x ./run_all.sh
 ./run_all.sh
 ```
 
+This starts:
+- Discord bot + web dashboard
+- Watcher, Orchestrator, Executor, Redis Agent
+- FULLSEND Listener, Builder Listener
+- **Real-time Dashboard** at http://127.0.0.1:8050/
+
 Optional extras:
 ```
-SCHEDULE_MODE=cron ./run_all.sh
-ROUNDTABLE_TOPIC="Next GTM experiments" ./run_all.sh
-WEAVE_DISABLED=1 ./run_all.sh
+SCHEDULE_MODE=cron ./run_all.sh    # Run with cron scheduling
+WEAVE_DISABLED=1 ./run_all.sh      # Disable Weave tracing
+```
+
+**Note:** Roundtable ideation is now triggered automatically by the Orchestrator when it needs fresh ideas (via `initiate_roundtable` action). You can also trigger it manually via Redis:
+```
+redis-cli PUBLISH fullsend:to_orchestrator '{"type":"roundtable_request","prompt":"What GTM channels should we try?"}'
+```
+
+## Real-time Dashboard
+The dashboard shows live system activity:
+- **Service status** — which services are active (green pulse)
+- **Message flow** — real-time events across all Redis channels
+- **Auto-refresh** — updates every 2 seconds
+
+Open http://127.0.0.1:8050/ after starting services.
+
+To run dashboard standalone:
+```
+uv run python demo/dashboard/dashboard_api.py
 ```
 
 ## What happens when everything is live
@@ -151,15 +185,48 @@ WEAVE_DISABLED=1 ./run_all.sh
 ## Quick live smoke test
 1) Start Redis (`brew services start redis` or Docker)
 2) Run `./run_all.sh`
-3) Test wiring: `./scripts/test_e2e_wiring.sh subs` (verify all channels have subscribers)
-4) Send test messages: `./scripts/test_e2e_wiring.sh all`
-5) Check logs: `tail -f .logs/*.log`
+3) Open dashboard: http://127.0.0.1:8050/
+4) Test wiring: `./scripts/test_e2e_wiring.sh subs` (verify all channels have subscribers)
+5) Send test messages: `./scripts/test_e2e_wiring.sh all`
+6) Watch dashboard light up as messages flow
+7) Check logs: `tail -f .logs/*.log`
 
-## Full Discord test
-1) Start all services with `./run_all.sh`
-2) Send a Discord message in `LISTENING_CHANNELS` with a GTM idea
-3) Watch the logs as it flows: Discord → Watcher → Orchestrator → FULLSEND
-4) Verify experiment spec created and published to Redis
+## Full Discord test (Seed Stage)
+1) Edit `context/product_context.md` with your product
+2) Start all services with `./run_all.sh`
+3) Open dashboard: http://127.0.0.1:8050/
+4) Send a Discord message with a GTM idea (e.g., "Let's try cold emailing CTOs who attended AI conferences")
+5) Watch the dashboard as it flows:
+   - Discord (green) → Watcher (green) → Orchestrator (green)
+   - If experiment requested: → FULLSEND (green) → Builder (green) → Executor (green)
+6) Verify experiment spec created and published to Redis
+
+## Reset / Fresh Start
+
+To reset Fullsend to a clean slate (e.g., to run with a different product):
+
+```bash
+./restart.sh          # Interactive reset
+./restart.sh --force  # No prompts
+./restart.sh --soft   # Keep product context, reset everything else
+```
+
+**What gets reset:**
+- `context/*.md` → Reset to templates
+- `tools/*.py` → Keep only core tools (browserbase.py, register.py)
+- All experiments and tool requests
+- Redis `fullsend:*` keys
+- All logs
+
+**What is preserved:**
+- Core tools (browserbase.py, register.py)
+- Example experiments in `examples/`
+- Prompts and templates
+- Configuration (.env)
+
+After reset:
+1. Edit `context/product_context.md` with your new product
+2. Run `./run_all.sh` to start fresh
 
 ## Tests
 ```

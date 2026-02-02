@@ -1,0 +1,267 @@
+experiment:
+  id: exp_20260201_ops_leader_agentforge
+  hypothesis: "VP Ops/CFO/COO at mid-market companies ($50M-$500M) in ops-heavy industries (manufacturing, logistics, healthcare) will respond to emails about 'AI workforce deployment' when we demonstrate speed-to-value contrast (days vs months). Email finder → sender automation proves the meta narrative."
+
+  target:
+    description: "VP Operations, CFO, COO at mid-market companies ($50M-$500M revenue) in manufacturing, logistics, healthcare, financial services - industries with high operational overhead and clear automation ROI"
+    size: 30
+    source: "Automated via browserbase_email_finder - target companies: mid-market leaders in ops-heavy verticals"
+    companies_to_research:
+      # Manufacturing
+      - name: "ProMach"
+        url: "promachbuilt.com"
+        industry: "manufacturing"
+        revenue_range: "$500M"
+      - name: "Pactiv Evergreen"
+        url: "pactivevergreen.com"
+        industry: "manufacturing"
+        revenue_range: "$450M"
+      - name: "Chart Industries"
+        url: "chartindustries.com"
+        industry: "manufacturing"
+        revenue_range: "$400M"
+
+      # Logistics
+      - name: "J.B. Hunt Transport"
+        url: "jbhunt.com"
+        industry: "logistics"
+        revenue_range: "$500M+"
+      - name: "Ryder System"
+        url: "ryder.com"
+        industry: "logistics"
+        revenue_range: "$500M+"
+      - name: "XPO Logistics"
+        url: "xpo.com"
+        industry: "logistics"
+        revenue_range: "$500M+"
+
+      # Healthcare Operations
+      - name: "Fresenius Medical Care"
+        url: "freseniusmedicalcare.com"
+        industry: "healthcare"
+        revenue_range: "$500M+"
+      - name: "Encompass Health"
+        url: "encompasshealth.com"
+        industry: "healthcare"
+        revenue_range: "$450M"
+      - name: "BrightSpring Health"
+        url: "brightspringhealth.com"
+        industry: "healthcare"
+        revenue_range: "$500M+"
+
+      # Financial Services Operations
+      - name: "First Horizon Bank"
+        url: "firsthorizon.com"
+        industry: "financial_services"
+        revenue_range: "$300M+"
+
+  execution:
+    phase_1_find_emails:
+      tool: browserbase_email_finder
+      description: "Find VP Ops, CFO, COO contacts at target companies"
+      params:
+        # This will run in a loop for each company
+        companies: "{{target.companies_to_research}}"
+        target_roles:
+          - "VP Operations"
+          - "VP Ops"
+          - "Chief Operating Officer"
+          - "COO"
+          - "CFO"
+          - "Chief Financial Officer"
+          - "Head of Operations"
+
+      output: "recipient_list"  # Store for phase 2
+
+    phase_2_send_emails:
+      tool: cold_email_sender
+      description: "Send personalized AgentForge pitch to discovered contacts"
+      depends_on: phase_1_find_emails
+      params:
+        campaign_name: "ops_leader_agentforge_v1"
+        recipients: "{{phase_1_find_emails.output.recipient_list}}"
+
+        template:
+          subject: "Re: AI workforce deployment"
+          body: |
+            Hi {{first_name}},
+
+            Your competitors are hiring more ops teams. You could be deploying AI agents instead.
+
+            I'm reaching out because {{company}} operates in {{industry}} where operational efficiency = competitive advantage. Most ops leaders I talk to waste 6 months evaluating AI vendors. We ship working agents in days, not quarters.
+
+            AgentForge is different: AI agents that build AI agents. It's meta, but it works. Proof? An autonomous agent found your email, wrote this message, and sent it. Same tech we'd deploy for your operations.
+
+            Three angles we're testing with ops leaders:
+
+            1. **Speed to value**: Deploy in days vs. 6-month pilot purgatory
+            2. **Meta proof**: This email was designed and sent by an agent—it's the product
+            3. **Operational AI**: Not chatbots. Process automation, data pipelines, workflow orchestration
+
+            {{company}} likely has:
+            - Manual data entry workflows eating hours/day
+            - Reporting dashboards that take a week to generate
+            - Cross-system reconciliation that's still Excel hell
+
+            We'd build the agents to fix them. Days, not months.
+
+            Worth a 15-minute call this week?
+
+            Best,
+            Alex Chen
+            Founder, AgentForge
+            alex@agentforge.dev
+
+            P.S. — If you're curious how an agent found your contact info and wrote this email, I'll show you the architecture on the call. It's the same stack we'd use for your ops workflows.
+
+        send_options:
+          sender_email: "alex@agentforge.dev"
+          sender_name: "Alex Chen"
+          daily_limit: 30
+          delay_seconds: 3
+
+    schedule: "0 10 * * WED"  # Wednesdays at 10am PT (mid-week, mid-morning)
+    timezone: "America/Los_Angeles"
+
+  outreach:
+    channel: "email"
+    angle: "Speed-to-value + Meta proof (agent-sent email) + Operational AI focus"
+    personalization_strategy: |
+      - Company name in opening line
+      - Industry-specific pain points (manufacturing = data entry, logistics = cross-system recon, healthcare = reporting)
+      - Role-specific value prop (ops leaders care about efficiency, CFOs care about ROI/speed)
+      - Meta narrative: "This email was sent by an agent" proves the product works
+
+    variants_to_test_later:
+      - name: "competitor_angle"
+        subject: "Re: your competitors are hiring"
+        hook: "Your competitors are hiring ops teams. You could be deploying AI instead."
+
+      - name: "direct_pain"
+        subject: "Re: operational bottlenecks"
+        hook: "Most ops leaders waste 6 months on AI pilots. We deploy in 4 days."
+
+  metrics:
+    - name: email_discovery_rate
+      type: percentage
+      calculation: "(emails_found / companies_researched) * 100"
+      success_threshold: 70.0
+      description: "Percentage of companies where we found target role emails"
+
+    - name: emails_sent
+      type: counter
+      description: "Total emails successfully sent after discovery phase"
+      success_threshold: 20
+
+    - name: reply_rate
+      type: percentage
+      calculation: "(replies / emails_sent) * 100"
+      success_threshold: 8.0
+      description: "Reply rate benchmark from previous CTO experiments"
+
+    - name: positive_reply_rate
+      type: percentage
+      calculation: "(positive_replies / emails_sent) * 100"
+      success_threshold: 3.0
+      description: "Interest signals: meeting requests, questions, 'tell me more'"
+
+    - name: meeting_booked_rate
+      type: percentage
+      calculation: "(meetings_booked / emails_sent) * 100"
+      success_threshold: 2.0
+      description: "Percentage who schedule a call"
+
+    - name: bounce_rate
+      type: percentage
+      calculation: "(bounces / emails_sent) * 100"
+      failure_threshold: 8.0
+      description: "Invalid emails - higher threshold than CTO experiment since we're scraping"
+
+  success_criteria:
+    - "Email discovery rate >= 70% (find contacts at 7 out of 10 companies)"
+    - "Send at least 20 emails from discovered contacts"
+    - "Reply rate >= 8% within 7 days (match CTO experiment benchmark)"
+    - "At least 1-2 positive replies (meetings, interest signals)"
+    - "Bounce rate < 8% (acceptable for automated discovery)"
+    - "Automation works end-to-end without manual intervention"
+
+  failure_criteria:
+    - "Email discovery rate < 50% (tool not finding contacts)"
+    - "Bounce rate > 15% (scraper returning bad emails)"
+    - "Reply rate < 3% after 7 days"
+    - "Zero positive replies after 10 days"
+
+  iteration_plan:
+    if_success: |
+      - Scale to 100+ companies across more verticals
+      - A/B test subject lines: 'Re: AI workforce' vs 'Re: your competitors are hiring'
+      - Add follow-up sequence at day 5: "Saw you opened the email about AgentForge. Worth a quick call?"
+      - Build learnings database: which industries respond best, which pain points resonate
+
+    if_failure: |
+      - If discovery fails: improve browserbase_email_finder (try LinkedIn Company pages, Crunchbase)
+      - If bounce rate high: add email validation step before sending
+      - If reply rate low: test different messaging angles (less meta, more ROI-focused)
+      - If zero replies: pivot to warm intro strategy or LinkedIn outreach
+
+  learnings_to_capture:
+    - "Does automated email discovery → send workflow perform at scale?"
+    - "Which industries respond best: manufacturing vs logistics vs healthcare vs financial services?"
+    - "Does the meta narrative ('agent sent this') intrigue or annoy ops leaders?"
+    - "Are ops-focused pain points (data entry, reporting, reconciliation) compelling hooks?"
+    - "Optimal company size: $50M-$200M vs $200M-$500M revenue?"
+    - "Does 'Re: AI workforce deployment' subject line get opens?"
+
+  automation_notes: |
+    This is our FIRST fully automated prospecting experiment:
+    1. browserbase_email_finder scrapes company websites for VP Ops/CFO/COO contacts
+    2. cold_email_sender sends personalized emails to discovered contacts
+    3. No manual list building required
+
+    If this works, we've validated:
+    - End-to-end automation (find → personalize → send)
+    - Meta narrative (agent-sent email proves the product)
+    - New ICP (ops leaders, not just CTOs)
+    - New verticals (manufacturing, logistics, healthcare)
+
+  manual_steps_required:
+    - "Verify BROWSERBASE_API_KEY and RESEND_API_KEY are set"
+    - "Ensure alex@agentforge.dev sender is verified in Resend"
+    - "Monitor first 5 emails manually to catch any templating errors"
+    - "Set up Resend webhook for reply tracking"
+    - "Reply to interested contacts within 4 hours (speed = conversion)"
+
+notes: |
+  **Why this experiment is bold:**
+
+  1. **Full automation**: No manual list building. We're trusting browserbase_email_finder to find the right people.
+
+  2. **New ICP**: Ops leaders, not CTOs. Different pain points, different value prop.
+
+  3. **Industry-specific**: Targeting ops-heavy industries where AI ROI is obvious.
+
+  4. **Meta narrative doubles down**: "An agent found your email and wrote this" is the entire pitch.
+
+  5. **Real company targets**: Not generic "mid-market companies" - actual named companies with URLs.
+
+  **Why this will work:**
+
+  - Ops leaders are drowning in manual processes. They FEEL the pain daily.
+  - Manufacturing/logistics/healthcare = high operational overhead = clear ROI for automation
+  - "Days vs months" resonates with ops leaders (they've been burned by slow vendors)
+  - Subject line "Re: AI workforce deployment" sounds like internal discussion, not spam
+  - P.S. line offers to show how it was built = nerd bait for technical ops leaders
+
+  **Risk mitigation:**
+
+  - Starting with 10 companies (30 emails max) to validate before scaling
+  - Monitoring bounce rate closely (automated discovery = higher risk of bad emails)
+  - Manual review of first 5 sends to catch templating bugs
+  - Fast reply SLA (4 hours) to convert interest into meetings
+
+  **If this succeeds, we'll have:**
+
+  - A repeatable prospecting motion (find → send → track)
+  - Validation of new ICP (ops leaders respond)
+  - Proof that meta narrative works across audiences
+  - Foundation for multi-channel expansion (LinkedIn, Product Hunt, GitHub)

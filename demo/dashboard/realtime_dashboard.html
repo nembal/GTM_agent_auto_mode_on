@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fullsend Dashboard</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚀</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0a0c;
+      --surface: #141418;
+      --surface2: #1a1a1f;
+      --surface3: #222228;
+      --text: #e4e4e7;
+      --text-muted: #71717a;
+      --border: #27272a;
+      --green: #22c55e;
+      --green-dim: #16a34a;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --blue: #3b82f6;
+      --purple: #8b5cf6;
+      --cyan: #06b6d4;
+      --orange: #f97316;
+      --pink: #ec4899;
+      --radius: 8px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .status-badge {
+      font-size: 0.75rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 99px;
+      background: var(--surface2);
+      color: var(--text-muted);
+    }
+    .status-badge.connected { background: rgba(34, 197, 94, 0.15); color: var(--green); }
+    
+    /* Service Grid */
+    .services {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .service-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.75rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .service-name {
+      font-weight: 500;
+      font-size: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .service-status {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .dot.active {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+      animation: pulse 2s infinite;
+    }
+    .dot.idle { background: var(--yellow); }
+    .dot.unknown { background: var(--text-muted); }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    /* Event Stream */
+    .events-section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .events-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+    }
+    .events-title {
+      font-weight: 600;
+      font-size: 0.875rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+    .events-controls {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .events-controls label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .event-count {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      background: var(--surface3);
+      padding: 0.2rem 0.5rem;
+      border-radius: 99px;
+    }
+    .events-list {
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    .event {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 0.75rem;
+      align-items: start;
+      font-size: 0.875rem;
+    }
+    .event:last-child { border-bottom: none; }
+    .event:hover { background: var(--surface2); }
+    .event-channel {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      white-space: nowrap;
+    }
+    .event-channel.discord_raw { background: rgba(59, 130, 246, 0.2); color: var(--blue); }
+    .event-channel.to_orchestrator { background: rgba(139, 92, 246, 0.2); color: var(--purple); }
+    .event-channel.from_orchestrator { background: rgba(249, 115, 22, 0.2); color: var(--orange); }
+    .event-channel.to_fullsend { background: rgba(34, 197, 94, 0.2); color: var(--green); }
+    .event-channel.builder_tasks { background: rgba(6, 182, 212, 0.2); color: var(--cyan); }
+    .event-channel.builder_results { background: rgba(6, 182, 212, 0.2); color: var(--cyan); }
+    .event-channel.experiment_results { background: rgba(236, 72, 153, 0.2); color: var(--pink); }
+    .event-channel.execute_now { background: rgba(234, 179, 8, 0.2); color: var(--yellow); }
+    .event-channel.metrics { background: rgba(139, 92, 246, 0.2); color: var(--purple); }
+    .event-channel.llm_calls { background: rgba(251, 191, 36, 0.25); color: #fbbf24; }
+    .event-channel.llm_calls.llm_start { animation: thinking-pulse 1.5s infinite; }
+    @keyframes thinking-pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(251, 191, 36, 0.4); }
+      50% { opacity: 0.7; box-shadow: 0 0 16px rgba(251, 191, 36, 0.6); }
+    }
+    .event-body {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+    .event-body .type { color: var(--text); font-weight: 500; }
+    .event-time {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .empty-state {
+      padding: 3rem;
+      text-align: center;
+      color: var(--text-muted);
+    }
+    .empty-state p { margin-top: 0.5rem; font-size: 0.875rem; }
+    
+    /* Refresh button */
+    button {
+      background: var(--surface3);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button:hover { background: var(--surface2); border-color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Fullsend Dashboard</h1>
+      <span id="connection-status" class="status-badge">Connecting...</span>
+    </header>
+    
+    <section class="services" id="services">
+      <!-- Services rendered by JS -->
+    </section>
+    
+    <section class="events-section">
+      <div class="events-header">
+        <span class="events-title">Live Message Flow</span>
+        <div class="events-controls">
+          <label>
+            <input type="checkbox" id="auto-refresh" checked />
+            Auto-refresh
+          </label>
+          <button id="refresh-btn">Refresh</button>
+          <span class="event-count" id="event-count">0 events</span>
+        </div>
+      </div>
+      <div class="events-list" id="events-list">
+        <div class="empty-state" id="empty-state">
+          <div style="font-size: 2rem;">📡</div>
+          <p>Waiting for events...</p>
+          <p style="font-size: 0.75rem; margin-top: 0.5rem;">Run services with <code>./run_all.sh</code></p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const SERVICES = ['discord', 'watcher', 'orchestrator', 'executor', 'redis_agent', 'fullsend', 'builder', 'roundtable'];
+    const SERVICE_LABELS = {
+      discord: 'Discord',
+      watcher: 'Watcher',
+      orchestrator: 'Orchestrator',
+      executor: 'Executor',
+      redis_agent: 'Redis Agent',
+      fullsend: 'FULLSEND',
+      builder: 'Builder',
+      roundtable: 'Roundtable'
+    };
+    
+    // Track all events across SSE updates
+    let allEvents = [];
+    let eventSource = null;
+    let lastHeartbeat = Date.now();
+    
+    function getChannelClass(channel) {
+      const short = channel.replace('fullsend:', '');
+      return short.replace(/:/g, '_');
+    }
+    
+    function getChannelLabel(channel) {
+      return channel.replace('fullsend:', '');
+    }
+    
+    function formatEventBody(data) {
+      const type = data.type || data.event || 'message';
+      let preview = '';
+      
+      // Special handling for LLM calls
+      if (type === 'llm_start') {
+        const model = data.meta?.model || 'unknown';
+        const op = data.operation || '';
+        const source = data.source || '';
+        preview = `${source} calling ${model}...`;
+        if (data.meta?.thinking_budget) {
+          preview += ` (thinking: ${data.meta.thinking_budget} tokens)`;
+        }
+        return `<span class="type" style="color: #fbbf24;">⏳ ${type}</span> — ${escapeHtml(preview)}`;
+      }
+      
+      if (type === 'llm_complete') {
+        const duration = data.duration_ms ? `${(data.duration_ms / 1000).toFixed(1)}s` : '?';
+        const source = data.source || '';
+        const model = data.meta?.model || '';
+        if (data.error) {
+          preview = `${source} failed: ${data.error}`;
+          return `<span class="type" style="color: var(--red);">❌ ${type}</span> — ${escapeHtml(preview)} (${duration})`;
+        }
+        preview = `${source} completed`;
+        return `<span class="type" style="color: var(--green);">✓ ${type}</span> — ${escapeHtml(preview)} (${duration})`;
+      }
+      
+      if (data.content) preview = data.content;
+      else if (data.message) preview = data.message;
+      else if (data.request) preview = data.request;
+      else if (data.experiment_id) preview = `experiment: ${data.experiment_id}`;
+      else if (data.tool_name) preview = `tool: ${data.tool_name}`;
+      else if (data.payload) preview = JSON.stringify(data.payload).slice(0, 100);
+      
+      if (preview.length > 120) preview = preview.slice(0, 120) + '...';
+      
+      return `<span class="type">${type}</span>${preview ? ' — ' + escapeHtml(preview) : ''}`;
+    }
+    
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+    
+    function formatTime(isoString) {
+      const d = new Date(isoString);
+      return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+    
+    function renderServices(services) {
+      const container = document.getElementById('services');
+      container.innerHTML = SERVICES.map(s => {
+        const info = services[s] || { status: 'unknown', last_seen_formatted: 'never' };
+        const dotClass = info.status === 'active' ? 'active' : info.status === 'idle' ? 'idle' : 'unknown';
+        return `
+          <div class="service-card">
+            <div class="service-name">
+              <span class="dot ${dotClass}"></span>
+              ${SERVICE_LABELS[s]}
+            </div>
+            <div class="service-status">${info.last_seen_formatted}</div>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    function renderEvents(events) {
+      const list = document.getElementById('events-list');
+      const empty = document.getElementById('empty-state');
+      const count = document.getElementById('event-count');
+      
+      count.textContent = `${events.length} events`;
+      
+      if (events.length === 0) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      
+      list.innerHTML = events.map(ev => {
+        // Add event type as extra class for LLM calls (for pulsing animation on llm_start)
+        const channelClass = getChannelClass(ev.channel);
+        const typeClass = ev.data?.type || '';
+        const extraClass = channelClass === 'llm_calls' ? ` ${typeClass}` : '';
+        return `
+          <div class="event">
+            <span class="event-channel ${channelClass}${extraClass}">${getChannelLabel(ev.channel)}</span>
+            <span class="event-body">${formatEventBody(ev.data)}</span>
+            <span class="event-time">${formatTime(ev.timestamp)}</span>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    function updateConnectionStatus(health, isConnected) {
+      const statusEl = document.getElementById('connection-status');
+      if (!isConnected) {
+        statusEl.textContent = 'Disconnected';
+        statusEl.className = 'status-badge';
+        statusEl.title = 'SSE connection lost';
+      } else if (!health.connected) {
+        statusEl.textContent = 'Redis Down';
+        statusEl.className = 'status-badge';
+        statusEl.title = health.last_error || 'Redis subscriber disconnected';
+      } else {
+        statusEl.textContent = 'Connected';
+        statusEl.className = 'status-badge connected';
+        statusEl.title = 'Real-time streaming active';
+      }
+    }
+    
+    function connectSSE() {
+      const statusEl = document.getElementById('connection-status');
+      statusEl.textContent = 'Connecting...';
+      
+      eventSource = new EventSource('/api/stream');
+      
+      eventSource.onopen = () => {
+        console.log('SSE connected');
+        lastHeartbeat = Date.now();
+      };
+      
+      eventSource.onmessage = (event) => {
+        lastHeartbeat = Date.now();
+        try {
+          const data = JSON.parse(event.data);
+          
+          // Update connection status
+          updateConnectionStatus(data.health, true);
+          
+          // Update services
+          if (data.services) {
+            renderServices(data.services);
+          }
+          
+          // Merge new events (avoid duplicates)
+          if (data.events && data.events.length > 0) {
+            const existingTimestamps = new Set(allEvents.map(e => e.timestamp + e.channel));
+            for (const ev of data.events) {
+              const key = ev.timestamp + ev.channel;
+              if (!existingTimestamps.has(key)) {
+                allEvents.unshift(ev);
+              }
+            }
+            // Keep only last 100 events
+            allEvents = allEvents.slice(0, 100);
+            renderEvents(allEvents);
+          }
+        } catch (e) {
+          console.error('SSE parse error:', e);
+        }
+      };
+      
+      eventSource.onerror = (e) => {
+        console.error('SSE error:', e);
+        updateConnectionStatus({ connected: false }, false);
+        eventSource.close();
+        // Reconnect after 3 seconds
+        setTimeout(connectSSE, 3000);
+      };
+    }
+    
+    async function fetchInitialData() {
+      try {
+        const [eventsRes, servicesRes] = await Promise.all([
+          fetch('/api/events?limit=50'),
+          fetch('/api/services')
+        ]);
+        
+        if (eventsRes.ok && servicesRes.ok) {
+          const eventsData = await eventsRes.json();
+          const servicesData = await servicesRes.json();
+          allEvents = eventsData.events;
+          renderServices(servicesData.services);
+          renderEvents(allEvents);
+        }
+      } catch (e) {
+        console.error('Initial fetch error:', e);
+      }
+    }
+    
+    // Check for stale connection (no heartbeat in 5s)
+    setInterval(() => {
+      if (Date.now() - lastHeartbeat > 5000 && eventSource) {
+        console.warn('Heartbeat timeout, reconnecting...');
+        eventSource.close();
+        connectSSE();
+      }
+    }, 2000);
+    
+    // Initial load then connect SSE
+    renderServices({});
+    fetchInitialData().then(() => {
+      connectSSE();
+    });
+    
+    document.getElementById('auto-refresh').addEventListener('change', function() {
+      if (this.checked) {
+        if (!eventSource || eventSource.readyState === EventSource.CLOSED) {
+          connectSSE();
+        }
+      } else {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+      }
+    });
+    
+    document.getElementById('refresh-btn').addEventListener('click', fetchInitialData);
+  </script>
+</body>
+</html>

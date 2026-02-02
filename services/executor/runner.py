@@ -254,6 +254,24 @@ async def _handle_failure(
     # Update experiment state
     await redis_client.hset(f"experiments:{exp_id}", "state", "failed")
 
+    # Emit error metric to fullsend:metrics so Redis Agent can catch it
+    error_metric = {
+        "event": "error",
+        "experiment_id": exp_id,
+        "run_id": run_id,
+        "message": str(error),
+        "error_type": type(error).__name__,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+    if is_timeout:
+        error_metric["timeout_seconds"] = settings.tool_execution_timeout
+    if retry_attempts is not None:
+        error_metric["retry_attempts"] = retry_attempts
+
+    await redis_client.publish(settings.channel_metrics, json.dumps(error_metric))
+    await redis_client.rpush(f"metrics:{exp_id}", json.dumps(error_metric))
+    logger.info(f"Emitted error metric for {exp_id} to {settings.channel_metrics}")
+
     # Build notification with additional details
     notification: dict[str, Any] = {
         "type": "experiment_failed",
@@ -269,7 +287,7 @@ async def _handle_failure(
     if retry_attempts is not None:
         notification["retry_attempts"] = retry_attempts
 
-    # Notify failure
+    # Notify failure to experiment_results channel
     await publish_result(
         redis_client,
         notification,

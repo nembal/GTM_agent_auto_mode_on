@@ -149,9 +149,20 @@ async def process_request(
 ) -> None:
     """Process a single Builder request."""
     prd = request.get("prd", {})
-    # Support both "name" and "tool_name" keys (Orchestrator uses "tool_name")
-    tool_name = prd.get("name") or prd.get("tool_name", "unknown")
+    # Handle nested PRD structure (prd.prd.name) for backwards compatibility
+    if isinstance(prd, dict) and "prd" in prd:
+        actual_prd = prd["prd"]
+    else:
+        actual_prd = prd
+    
+    # Support both "name" and "tool_name" keys
+    tool_name = actual_prd.get("name") or actual_prd.get("tool_name", "unknown") if isinstance(actual_prd, dict) else "unknown"
     request_id = request.get("request_id", datetime.now(UTC).strftime("%Y%m%d_%H%M%S"))
+    
+    # Extract notification context to forward through the flow
+    notify_channel = request.get("notify_channel")
+    notify_message = request.get("notify_message")
+    original_reasoning = request.get("orchestrator_reasoning", "")
     
     logger.info(f"Processing PRD: {tool_name} (request: {request_id})")
     
@@ -159,6 +170,7 @@ async def process_request(
     await publish_result(redis_client, CHANNEL_TO_ORCHESTRATOR, "builder_started", {
         "request_id": request_id,
         "tool_name": tool_name,
+        "notify_channel": notify_channel,
     })
     
     # Write PRD to file
@@ -167,7 +179,7 @@ async def process_request(
     # Run Builder
     result = await run_builder()
     
-    # Notify completion
+    # Notify completion with full context for Orchestrator to continue the flow
     if result["success"]:
         await publish_result(redis_client, CHANNEL_BUILDER_RESULTS, "tool_built", {
             "request_id": request_id,
@@ -177,6 +189,9 @@ async def process_request(
         await publish_result(redis_client, CHANNEL_TO_ORCHESTRATOR, "builder_completed", {
             "request_id": request_id,
             "tool_name": tool_name,
+            "notify_channel": notify_channel,
+            "notify_message": notify_message,
+            "original_reasoning": original_reasoning,
         })
         logger.info(f"Tool built successfully: {tool_name}")
     else:
@@ -189,6 +204,7 @@ async def process_request(
             "request_id": request_id,
             "tool_name": tool_name,
             "error": result.get("error", "Unknown error"),
+            "notify_channel": notify_channel,
         })
         logger.error(f"Tool build failed: {tool_name} - {result.get('error')}")
 

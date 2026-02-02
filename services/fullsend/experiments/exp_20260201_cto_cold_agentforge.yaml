@@ -1,0 +1,166 @@
+experiment:
+  id: exp_20260201_cto_cold_agentforge
+  hypothesis: "CTOs at mid-market companies ($50M-$500M revenue) who've been burned by AI vendors will respond to bold, meta messaging about AgentForge - specifically the angle 'we built an agent to sell agents'"
+
+  target:
+    description: "CTOs at mid-market companies ($50M-$500M revenue) in industries heavily evaluating AI: SaaS, fintech, healthtech, logistics"
+    size: 50
+    source: "Manual curation from LinkedIn Sales Navigator + company revenue verification via Crunchbase/ZoomInfo"
+
+  execution:
+    tool: cold_email_sender
+    params:
+      campaign_name: "cto_agentforge_meta_v1"
+      recipients:
+        # Test batch - manually curated list
+        - email: "placeholder@company.com"
+          first_name: "{{to_be_sourced}}"
+          last_name: "{{to_be_sourced}}"
+          company: "{{to_be_sourced}}"
+          title: "CTO"
+          custom_fields:
+            industry: "{{saas|fintech|healthtech|logistics}}"
+            pain_point: "{{scaling_ai|vendor_fatigue|build_vs_buy}}"
+
+      template:
+        subject: "Re: building agents"
+        body: |
+          Hi {{first_name}},
+
+          Quick question: What if your AI vendor used AI to build your AI?
+
+          We built an autonomous agent to sell our agent platform. It designed this email, found you, and is tracking if you read it. Not a gimmick—it's how AgentForge works.
+
+          Most CTOs I talk to at {{industry}} companies are stuck between:
+          • Hiring AI teams (6+ months, $1M+ burn)
+          • Vendor promises that underdeliver
+          • Build vs. buy paralysis
+
+          AgentForge is different: Your agents build your agents. We deploy working AI teams in days, not quarters.
+
+          The meta proof: This outreach was designed and executed by an agent. It works.
+
+          Worth a 15-minute call this week to see if it fits your stack?
+
+          Best,
+          Alex Chen
+          Founder, AgentForge
+
+          P.S. — If you're curious how an agent wrote this email, I'll show you the architecture on the call.
+
+      send_options:
+        sender_email: "alex@agentforge.dev"
+        sender_name: "Alex Chen"
+        daily_limit: 50
+        delay_seconds: 2
+
+    schedule: "0 9 * * TUE,THU"  # Tuesday and Thursday at 9am (optimal send times)
+    timezone: "America/Los_Angeles"
+
+  outreach:
+    channel: "email"
+    variants:
+      - name: "meta_story"
+        subject: "Re: building agents"
+        angle: "We built an agent to sell agents - the meta proof it works"
+
+      - name: "pain_point_direct"
+        subject: "Re: your AI vendor problem"
+        angle: "Acknowledging vendor fatigue, positioning as alternative"
+        template: |
+          Hi {{first_name}},
+
+          Honest question: How many AI vendor demos have you sat through that overpromised and underdelivered?
+
+          I'm building AgentForge—an agent platform that builds agents. Not another demo. Not another pilot. Working AI teams, deployed in days.
+
+          The proof: An autonomous agent designed this email, found you, sent it, and is tracking engagement. It's the same tech we'd deploy for you.
+
+          Most CTOs at $100M+ companies waste 6 months building what we ship in a week. Your team focuses on business logic. Our agents handle the grunt work.
+
+          15 minutes this week to see if it fits?
+
+          Best,
+          Alex
+
+  metrics:
+    - name: reply_rate
+      type: percentage
+      calculation: "(replies / emails_sent) * 100"
+      success_threshold: 8.0
+      description: "Percentage of recipients who reply (benchmark: 8% from previous experiments)"
+
+    - name: positive_reply_rate
+      type: percentage
+      calculation: "(positive_replies / emails_sent) * 100"
+      success_threshold: 3.0
+      description: "Percentage expressing interest (meeting request, question, etc.)"
+
+    - name: meeting_booked_rate
+      type: percentage
+      calculation: "(meetings_booked / emails_sent) * 100"
+      success_threshold: 2.0
+      description: "Percentage who book a call"
+
+    - name: bounce_rate
+      type: percentage
+      calculation: "(bounces / emails_sent) * 100"
+      failure_threshold: 5.0
+      description: "Invalid emails - indicates list quality issue"
+
+    - name: unsubscribe_rate
+      type: percentage
+      calculation: "(unsubscribes / emails_sent) * 100"
+      failure_threshold: 10.0
+      description: "Opt-outs - indicates messaging misalignment"
+
+  success_criteria:
+    - "Reply rate >= 8% within 7 days (matching previous stargazer experiments)"
+    - "Positive reply rate >= 3% (1-2 interested CTOs from 50 emails)"
+    - "At least 1 meeting booked to validate ICP"
+    - "Bounce rate < 5% (validates list quality)"
+    - "Subject line 'Re: building agents' generates curiosity without spam flags"
+
+  failure_criteria:
+    - "Reply rate < 3% after 7 days"
+    - "Bounce rate > 5% (bad list)"
+    - "Unsubscribe rate > 10% (messaging completely off)"
+    - "Zero positive replies after 10 days"
+
+  iteration_plan:
+    if_success: "Scale to 200 CTOs, test variant 'pain_point_direct' in A/B split"
+    if_failure: "Pivot to warm intro strategy or refine targeting to CTOs with specific trigger events (funding, hiring spree, tech stack changes)"
+
+  learnings_to_capture:
+    - "Which messaging angle resonates: meta story vs. pain point direct"
+    - "Does 'Re:' subject line work for cold outreach or trigger spam filters"
+    - "Are mid-market CTOs responsive to bold, unconventional pitches"
+    - "Optimal reply time distribution (immediate vs. 3-day vs. 7-day)"
+
+  manual_steps_required:
+    - "Source 50 CTO emails from LinkedIn Sales Navigator (filter: CTO, company size 50-500, industries: SaaS/fintech/healthtech/logistics)"
+    - "Verify company revenue $50M-$500M via Crunchbase or ZoomInfo"
+    - "Replace placeholder recipients with actual curated list"
+    - "Set up Resend webhook to capture opens, clicks, replies in real-time"
+    - "Manual reply monitoring for first 48 hours to catch fast responders"
+
+notes: |
+  This is our FIRST cold email experiment. Starting conservative at 50 emails to:
+  1. Test if messaging resonates before burning the list
+  2. Validate that "meta story" angle is compelling vs. gimmicky
+  3. Learn optimal targeting criteria for CTOs
+
+  Bold choices in this experiment:
+  - "Re:" subject line creates false familiarity (risky but previous exp showed 8%+ reply rate)
+  - Opening with "What if your AI vendor used AI to build your AI?" - provocative, not safe
+  - Admitting the email was written by an agent - could backfire or intrigue
+  - P.S. line offers to show architecture - nerd bait for technical CTOs
+
+  Why this will work:
+  - CTOs are pattern-matchers; they'll recognize this is different
+  - Vendor fatigue is real; positioning as "anti-vendor" resonates
+  - Meta proof (agent selling agents) is memorable and shareable
+
+  Follow-up sequence (if this succeeds):
+  - Day 5: "Quick follow-up: saw you opened the email about agent-built agents. Worth a call?"
+  - Day 10: Case study approach - "We just deployed an agent for [similar company]. Took 4 days."

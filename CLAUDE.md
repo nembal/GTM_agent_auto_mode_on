@@ -54,10 +54,15 @@ uv run python -m services.builder.listener
 ./scripts/test_e2e_wiring.sh subs    # Check Redis subscriptions
 ./scripts/test_e2e_wiring.sh all     # Run all wiring tests
 
-# Run Roundtable (multi-agent ideation)
-./run_roundtable.sh "Topic: What GTM channels should we try next?"
-# Or manually:
-python -m services.roundtable "Your topic here"
+# Roundtable (multi-agent ideation) - now triggered by Orchestrator
+# Orchestrator calls initiate_roundtable when it needs fresh ideas
+# To trigger manually via Redis:
+redis-cli PUBLISH fullsend:to_orchestrator '{"type":"roundtable_request","prompt":"What GTM channels should we try?"}'
+
+# Reset to clean slate (new product, fresh start)
+./restart.sh              # Interactive
+./restart.sh --force      # No prompts
+./restart.sh --soft       # Keep product context, reset agent state
 
 # Register tools in Redis
 python -m tools.register browserbase

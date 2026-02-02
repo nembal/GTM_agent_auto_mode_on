@@ -1,8 +1,9 @@
 # Status: roundtable
 
-State: COMPLETE
+State: INTEGRATED
 Started: 2026-02-01T07:29:21-08:00
 Completed: 2026-02-01T07:42:27-08:00
+Updated: 2026-02-01 (Orchestrator integration)
 
 ## Inputs
 - PRD: docs/prd/PRD_ROUNDTABLE.md
@@ -50,6 +51,26 @@ python -m services.roundtable input.json                   # File arg
 ## Post-Build Fixes
 - Made weave project ID configurable via WEAVE_PROJECT env var
 - Added API key validation in llm.py
+
+## Orchestrator Integration (Feb 2026)
+
+Roundtable is now callable by the Orchestrator as part of the autonomous loop:
+
+**How it works:**
+1. Orchestrator decides it needs fresh ideas (via `initiate_roundtable` action)
+2. Dispatcher runs `uv run python -m services.roundtable` as subprocess
+3. Input: JSON with prompt, context, learnings
+4. Output: transcript + summary (3-5 tasks with owners)
+5. Orchestrator can then dispatch experiments based on ideas
+
+**Trigger points:**
+- Worklist empty, no active experiments
+- Experiments stalling, need new angles
+- User asks "what should we try next?"
+
+**Removed:**
+- `run_roundtable.sh` (was using conda, inconsistent with project)
+- `ROUNDTABLE_TOPIC` env var in run_all.sh (Orchestrator triggers now)
 
 ## Blockers
 None - LLM error handling not implemented but noted for future

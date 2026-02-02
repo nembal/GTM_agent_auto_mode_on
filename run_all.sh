@@ -6,7 +6,6 @@ cd "$ROOT_DIR"
 
 LOG_DIR="${LOG_DIR:-$ROOT_DIR/.logs}"
 SCHEDULE_MODE="${SCHEDULE_MODE:-trigger}"
-ROUNDTABLE_TOPIC="${ROUNDTABLE_TOPIC:-}"
 
 mkdir -p "$LOG_DIR"
 
@@ -52,12 +51,10 @@ start_service "executor" env SCHEDULE_MODE="$SCHEDULE_MODE" uv run python -m ser
 # Claude Code agent listeners (bridge Redis -> Claude Code)
 start_service "fullsend_listener" uv run python -m services.fullsend.listener
 start_service "builder_listener" uv run python -m services.builder.listener
-
-if [[ -n "$ROUNDTABLE_TOPIC" ]]; then
-  start_service "roundtable" ./run_roundtable.sh "$ROUNDTABLE_TOPIC"
-fi
+start_service "dashboard" uv run python demo/dashboard/dashboard_api.py
 
 echo "All services started (including FULLSEND + Builder listeners)."
+echo "Roundtable: Orchestrator triggers automatically when it needs fresh ideas."
 echo "Logs: $LOG_DIR/*.log"
 echo "Press Ctrl+C to stop."
 

@@ -35,6 +35,7 @@ CHANNELS = [
     "fullsend:execute_now",
     "fullsend:metrics",
     "fullsend:schedules",
+    "fullsend:llm_calls",  # LLM call start/complete events
 ]
 
 # Map channels to source service for status tracking
@@ -75,6 +76,9 @@ class EventBuffer:
     events: deque = field(default_factory=lambda: deque(maxlen=100))
     service_last_seen: dict = field(default_factory=dict)
     lock: threading.Lock = field(default_factory=threading.Lock)
+    redis_connected: bool = False
+    redis_last_error: str = ""
+    redis_reconnect_count: int = 0
     
     def add_event(self, channel: str, data: dict) -> None:
         """Add an event and update service last-seen time."""
@@ -85,16 +89,36 @@ class EventBuffer:
         }
         with self.lock:
             self.events.append(event)
-            # Update service last seen
-            service = CHANNEL_TO_SERVICE.get(channel)
-            if service:
-                self.service_last_seen[service] = time.time()
-            # Also check message type for more specific service detection
+            
+            # Determine source service from message content first, then channel
+            source = data.get("source", "")
             msg_type = data.get("type", "")
-            if "redis_agent" in msg_type or data.get("source") == "redis_agent":
+            
+            # Check explicit source field
+            if source in ALL_SERVICES:
+                self.service_last_seen[source] = time.time()
+            
+            # Check message type for service attribution
+            if msg_type == "watcher_response" or source == "watcher":
+                self.service_last_seen["watcher"] = time.time()
+            elif msg_type == "escalation" and source == "watcher":
+                self.service_last_seen["watcher"] = time.time()
+            elif "redis_agent" in msg_type or source == "redis_agent":
                 self.service_last_seen["redis_agent"] = time.time()
-            if "roundtable" in msg_type or data.get("source") == "roundtable":
+            elif "roundtable" in msg_type or source == "roundtable":
                 self.service_last_seen["roundtable"] = time.time()
+            elif source == "fullsend":
+                self.service_last_seen["fullsend"] = time.time()
+            elif source == "builder":
+                self.service_last_seen["builder"] = time.time()
+            elif source == "orchestrator":
+                self.service_last_seen["orchestrator"] = time.time()
+            
+            # Fall back to channel-based detection if no source identified
+            if not source and msg_type not in ("watcher_response", "escalation"):
+                service = CHANNEL_TO_SERVICE.get(channel)
+                if service:
+                    self.service_last_seen[service] = time.time()
     
     def get_events(self, limit: int = 50) -> list[dict]:
         """Get recent events, newest first."""
@@ -125,6 +149,14 @@ class EventBuffer:
                     "last_seen_formatted": "never",
                 }
         return result
+    
+    def get_redis_health(self) -> dict:
+        """Get Redis connection health."""
+        return {
+            "connected": self.redis_connected,
+            "last_error": self.redis_last_error,
+            "reconnect_count": self.redis_reconnect_count,
+        }
 
 
 def _format_ago(seconds: float) -> str:
@@ -147,6 +179,7 @@ def run_redis_subscriber():
         import redis
     except ImportError:
         print("Redis not available, running in demo mode", file=sys.stderr)
+        event_buffer.redis_last_error = "redis library not installed"
         return
     
     def subscribe_loop():
@@ -160,6 +193,10 @@ def run_redis_subscriber():
                     pubsub.subscribe(channel)
                 print(f"Subscribed to {len(CHANNELS)} Redis channels")
                 
+                # Mark connected
+                event_buffer.redis_connected = True
+                event_buffer.redis_last_error = ""
+                
                 # Listen for messages
                 for message in pubsub.listen():
                     if message["type"] == "message":
@@ -170,9 +207,15 @@ def run_redis_subscriber():
                         event_buffer.add_event(message["channel"], data)
                         
             except redis.ConnectionError as e:
+                event_buffer.redis_connected = False
+                event_buffer.redis_last_error = str(e)
+                event_buffer.redis_reconnect_count += 1
                 print(f"Redis connection error: {e}, retrying in 5s...")
                 time.sleep(5)
             except Exception as e:
+                event_buffer.redis_connected = False
+                event_buffer.redis_last_error = str(e)
+                event_buffer.redis_reconnect_count += 1
                 print(f"Redis subscriber error: {e}, retrying in 5s...")
                 time.sleep(5)
     
@@ -183,7 +226,7 @@ def run_redis_subscriber():
 def create_app():
     """Create Flask app with API endpoints."""
     try:
-        from flask import Flask, jsonify, send_from_directory, request
+        from flask import Flask, jsonify, send_from_directory, request, Response
     except ImportError:
         print("Install Flask: pip install flask", file=sys.stderr)
         sys.exit(1)
@@ -205,6 +248,47 @@ def create_app():
         return jsonify({
             "services": event_buffer.get_service_status(),
         })
+    
+    @app.route("/api/health")
+    def api_health():
+        """Get Redis connection health."""
+        health = event_buffer.get_redis_health()
+        return jsonify(health)
+    
+    @app.route("/api/stream")
+    def api_stream():
+        """Server-Sent Events stream for real-time updates."""
+        def generate():
+            last_count = 0
+            while True:
+                # Check for new events
+                current_count = len(event_buffer.events)
+                if current_count != last_count:
+                    # Send new events
+                    events = event_buffer.get_events(10)
+                    health = event_buffer.get_redis_health()
+                    services = event_buffer.get_service_status()
+                    data = json.dumps({
+                        "events": events,
+                        "health": health,
+                        "services": services,
+                    })
+                    yield f"data: {data}\n\n"
+                    last_count = current_count
+                else:
+                    # Send heartbeat every 2s even if no new events
+                    health = event_buffer.get_redis_health()
+                    services = event_buffer.get_service_status()
+                    data = json.dumps({
+                        "events": [],
+                        "health": health,
+                        "services": services,
+                        "heartbeat": True,
+                    })
+                    yield f"data: {data}\n\n"
+                time.sleep(1)  # Check every 1s for lower latency
+        
+        return Response(generate(), mimetype="text/event-stream")
     
     @app.route("/api/inject", methods=["POST"])
     def api_inject():

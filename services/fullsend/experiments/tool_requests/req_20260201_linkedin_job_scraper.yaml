@@ -1,0 +1,231 @@
+tool_request:
+  id: req_20260201_linkedin_job_scraper
+  name: linkedin_job_scraper
+  priority: HIGH
+  requested_by: FULLSEND
+  requested_at: "2026-02-01T22:30:00Z"
+
+  problem_statement: |
+    Current bottleneck in autonomous GTM pipeline: Phase 1 (finding companies hiring for automatable roles) is MANUAL.
+
+    I need to search LinkedIn Jobs for companies hiring for specific roles (Invoice Processor, Data Entry Specialist, Lead Qualification Analyst, etc.) and extract:
+    - Company name
+    - Company URL
+    - Job title
+    - Posted date
+    - Industry (if available)
+    - Company size (if available)
+
+    This data feeds into Phase 2 (browserbase_email_finder) to discover decision-maker contacts, then Phase 3 (cold_email_sender) for personalized outreach.
+
+    **Without this tool:** I'm stuck doing manual LinkedIn searches for 4 hours to find 100 companies.
+    **With this tool:** Fully autonomous pipeline from job posting → email sent.
+
+  description: "Scrapes LinkedIn Jobs to find companies hiring for specific roles. Returns company details in CSV format for downstream processing."
+
+  use_case: "Autonomous cold outreach pipeline targeting companies with high-signal hiring intent. Find companies hiring for roles AgentForge can automate, then reach out to decision-makers with personalized emails referencing their job posting."
+
+  inputs:
+    - name: job_titles
+      type: list[str]
+      required: true
+      description: "List of job titles to search for"
+      example:
+        - "Invoice Processor"
+        - "Data Entry Specialist"
+        - "Lead Qualification Analyst"
+        - "Operations Coordinator"
+
+    - name: industries
+      type: list[str]
+      required: false
+      description: "Filter by industries (e.g., Manufacturing, Logistics, Healthcare)"
+      example:
+        - "Manufacturing"
+        - "Logistics"
+        - "Healthcare"
+
+    - name: company_size
+      type: str
+      required: false
+      description: "Employee count range (e.g., '200-2000')"
+      example: "200-2000"
+
+    - name: posted_within_days
+      type: int
+      required: false
+      default: 30
+      description: "Only include jobs posted within last N days"
+
+    - name: limit
+      type: int
+      required: false
+      default: 100
+      description: "Maximum number of companies to return"
+
+    - name: location
+      type: str
+      required: false
+      description: "Geographic filter (e.g., 'United States', 'California')"
+
+    - name: exclude_companies
+      type: list[str]
+      required: false
+      description: "Companies to skip (already targeted, competitors, etc.)"
+
+  outputs:
+    - name: companies_csv
+      type: str
+      description: "Path to CSV file with discovered companies"
+      format: "company_name,company_url,job_title,job_url,posted_date,industry,company_size"
+
+    - name: companies_found
+      type: int
+      description: "Total number of companies discovered"
+
+    - name: job_postings_scanned
+      type: int
+      description: "Total job postings processed"
+
+  output_format: |
+    CSV with columns:
+    - company_name: string (e.g., "ProMach")
+    - company_url: string (e.g., "promachbuilt.com")
+    - job_title: string (e.g., "Invoice Processor")
+    - job_url: string (e.g., "https://linkedin.com/jobs/view/12345")
+    - posted_date: string (e.g., "2026-01-25")
+    - industry: string (e.g., "Manufacturing") [if available]
+    - company_size: string (e.g., "500-1000") [if available]
+
+  requirements:
+    authentication:
+      - "LinkedIn login via Browserbase (use BROWSERBASE_API_KEY)"
+      - "Handle LinkedIn rate limits gracefully (max 100 searches/hour)"
+      - "Rotate sessions if rate limited"
+
+    functionality:
+      - "Support multiple job title searches in one run"
+      - "Deduplicate companies (same company hiring for multiple roles)"
+      - "Filter by company size and industry"
+      - "Filter by posted date (recency = higher intent)"
+      - "Handle pagination (LinkedIn shows 25 jobs/page)"
+      - "Extract company LinkedIn URL and convert to website URL if possible"
+      - "Respect exclude_companies list"
+
+    error_handling:
+      - "Return partial results if LinkedIn blocks/rate-limits mid-scrape"
+      - "Log companies that couldn't be scraped (missing data, errors)"
+      - "Retry failed requests 3 times with exponential backoff"
+
+    performance:
+      - "Process 100 companies in under 30 minutes"
+      - "Use Browserbase headless browser for speed"
+      - "Parallel search for multiple job titles (if possible)"
+
+    output:
+      - "Write CSV to /tmp/hiring_companies.csv (or user-specified path)"
+      - "Return summary: companies found, jobs scanned, errors encountered"
+      - "Include metadata file with run details (timestamp, filters used, etc.)"
+
+  technical_approach: |
+    **Recommended implementation:**
+
+    1. Use Browserbase (already integrated) for headless browsing
+    2. Navigate to LinkedIn Jobs: https://www.linkedin.com/jobs/search/
+    3. For each job_title in inputs:
+       a. Enter job title in search box
+       b. Apply filters: industry, company size, posted date, location
+       c. Paginate through results (25/page, up to limit)
+       d. For each job posting:
+          - Extract company name from job card
+          - Click into company profile → get company URL
+          - Extract industry and size from company page
+          - Store: company_name, company_url, job_title, posted_date
+    4. Deduplicate by company_name
+    5. Write to CSV
+    6. Return path + summary stats
+
+    **Edge cases to handle:**
+
+    - Job postings with incomplete company info (skip or partial data?)
+    - Companies with no website URL (use LinkedIn profile URL?)
+    - Rate limiting (pause, rotate session, or fail gracefully?)
+    - LinkedIn login walls (handle auth, cookies, sessions)
+
+    **Similar to:** browserbase_email_finder (uses Browserbase for scraping)
+
+  example_usage: |
+    ```python
+    from tools.linkedin_job_scraper import linkedin_job_scraper
+
+    result = linkedin_job_scraper(
+        job_titles=[
+            "Invoice Processor",
+            "Data Entry Specialist",
+            "Lead Qualification Analyst"
+        ],
+        industries=["Manufacturing", "Logistics", "Healthcare"],
+        company_size="200-2000",
+        posted_within_days=30,
+        limit=100,
+        location="United States"
+    )
+
+    print(f"Found {result['companies_found']} companies")
+    print(f"CSV saved to: {result['companies_csv']}")
+    # Output: /tmp/hiring_companies.csv
+    ```
+
+  success_criteria:
+    - "Find 100+ companies in target industries hiring for specified roles"
+    - "90%+ data completeness (company name, URL, job title)"
+    - "CSV output compatible with browserbase_email_finder input"
+    - "Runs in under 30 minutes for 100 companies"
+    - "Handles LinkedIn rate limits gracefully (doesn't crash)"
+
+  integration_points:
+    upstream: "FULLSEND experiment designer (defines job titles + filters)"
+    downstream: "browserbase_email_finder (consumes company list to find decision-maker emails)"
+    redis_channels:
+      - "fullsend:builder_requests (publish tool request)"
+      - "fullsend:experiments (experiment specs reference this tool)"
+
+  alternatives_considered:
+    - "LinkedIn Sales Navigator API (cost prohibitive, $99/mo)"
+    - "Third-party job aggregators (Indeed, ZipRecruiter) - less B2B targeting"
+    - "Manual CSV creation (current approach - doesn't scale)"
+    - "Scraping Google '\"Invoice Processor\" site:linkedin.com/jobs' (fragile, incomplete data)"
+
+  why_linkedin_jobs:
+    - "High-quality B2B company data (industry, size, URL)"
+    - "Hiring = strong buying signal (active pain + budget)"
+    - "Recency filter = hot leads (posted in last 30 days)"
+    - "Broad coverage (most mid-market companies post on LinkedIn)"
+
+  expected_impact:
+    - "Fully automate Phase 1 of autonomous GTM pipeline"
+    - "Unlock 10x scale: 100 → 1000 companies/month"
+    - "Reduce manual research from 4 hours → 0 minutes"
+    - "Enable daily/weekly experiments (vs one-off manual runs)"
+    - "Compound learning: which job types convert best, which industries respond"
+
+  estimated_effort:
+    - "2-4 hours to build (similar complexity to browserbase_email_finder)"
+    - "Use existing Browserbase integration"
+    - "Main challenge: LinkedIn rate limits + login handling"
+
+  notes: |
+    **This is a KEY BOTTLENECK for autonomous GTM.**
+
+    Without this tool:
+    - Phase 1 is manual (doesn't scale)
+    - Experiments require 4 hours of prep work
+    - Can't run frequent iterations
+
+    With this tool:
+    - End-to-end automation: job posting → email sent
+    - Daily experiments possible
+    - Scalable pipeline (1000 companies/month)
+    - High-signal targeting (hiring = intent)
+
+    **Priority: Build this ASAP to unlock autonomous pipeline.**
